@@ -1,0 +1,60 @@
+{
+  "features": [
+    {
+      "id": "F01",
+      "name": "Tool Protocol 接口",
+      "file": "tools/base.py",
+      "status": "pending",
+      "description": "定义 Tool Protocol，所有工具实现此接口"
+    },
+    {
+      "id": "F02",
+      "name": "Agent 主循环",
+      "file": "core/loop.py",
+      "status": "pending",
+      "description": "实现 while True 主循环：调用 LLM → 解析响应 → 执行工具 → 回传结果"
+    },
+    {
+      "id": "F03",
+      "name": "Bash 工具",
+      "file": "tools/bash.py",
+      "status": "pending",
+      "description": "实现 bash 命令执行工具"
+    },
+    {
+      "id": "F04",
+      "name": "文件读取工具",
+      "file": "tools/file_read.py",
+      "status": "pending",
+      "description": "实现文件读取工具"
+    },
+    {
+      "id": "F05",
+      "name": "文件写入工具",
+      "file": "tools/file_write.py",
+      "status": "pending",
+      "description": "实现文件写入工具"
+    },
+    {
+      "id": "F06",
+      "name": "搜索工具",
+      "file": "tools/grep.py",
+      "status": "pending",
+      "description": "实现文件内容搜索工具"
+    },
+    {
+      "id": "F07",
+      "name": "权限检查",
+      "file": "permissions/checker.py",
+      "status": "pending",
+      "description": "实现 ALLOW/DENY/ASK 权限系统"
+    },
+    {
+      "id": "F08",
+      "name": "上下文压缩",
+      "file": "context/compressor.py",
+      "status": "pending",
+      "description": "实现截断、摘要、裁剪三种压缩策略"
+    }
+  ]
+}
