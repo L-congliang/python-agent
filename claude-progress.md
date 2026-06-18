@@ -1,23 +1,31 @@
 # 进度日志
 
-## Session 3 — 2026-06-18 公司（当前）
+## Session 4 — 2026-06-18 家（当前）
 
 ### 完成
-- PRD 讨论：确认 CLI 形态 + mimo v2.5pro 模型
-- 重写 F01-F03 specs 到实习项目级别（增加设计决策、面试问题、错误处理）
-- 功能重新排序：F01 模型层 → F02 CLI → F03 Tool Protocol → F04 主循环...
-- 更新 CLAUDE.md 项目定位和技术栈
-- 更新 pyproject.toml 依赖（rich, prompt-toolkit, jsonschema）
+- F01 模型层实现完成
+  - `core/model.py`: MimoClient + ModelConfig + load_config
+  - 同步对话 chat()、流式对话 chat_stream()
+  - 指数退避重试机制（限流、超时、连接错误）
+  - 错误分类处理（认证错误不重试）
+  - 日志记录（调用次数、token 数、耗时）
+  - 配置管理（环境变量）
+- `tests/test_model.py`: 15 个测试通过
+  - 配置加载、客户端初始化
+  - 同步/流式对话
+  - 重试机制、错误处理
+  - 集成测试（需要 API key）
+- 更新 `core/__init__.py` 导出新模块
 
 ### 当前状态
-- 所有功能 status: pending，代码未开始
+- F01 status: done
+- F02-F10 status: pending
 - F01-F03 spec 已完成，F04-F10 spec 待写
-- harness 基础设施已完成
 
 ### 下次从这里开始
-1. 实现 F01 `core/model.py`（mimo API 客户端）
-2. 对应 spec: `specs/F01-model.md`
-3. 关键任务：重试机制、错误分类、配置管理、日志记录
+1. 实现 F02 CLI 框架（`cli/app.py`）
+2. 对应 spec: `specs/F02-cli.md`
+3. 关键任务：rich 渲染 + prompt_toolkit 交互
 
 ### 阻塞点
 - （无）

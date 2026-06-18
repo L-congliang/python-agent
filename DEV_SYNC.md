@@ -10,10 +10,10 @@
 
 ## 最新状态
 
-- **当前功能**: F01 模型层 - mimo API 客户端
-- **最后更新**: 2026-06-18 23:40
-- **最后地点**: 公司
-- **当前所在地**: 公司（准备回家）
+- **当前功能**: F02 CLI 框架 - 终端 UI
+- **最后更新**: 2026-06-18
+- **最后地点**: 家
+- **当前所在地**: 家
 
 ---
 
@@ -28,25 +28,28 @@
 
 ## 工作日志
 
-### 2026-06-18 23:40 公司
+### 2026-06-18 家
 
 **做了什么:**
-- PRD 讨论：确认 CLI 形态 + mimo v2.5pro
-- 重写 F01-F03 specs 到实习项目级别
-- 更新 CLAUDE.md 项目定位、技术栈、完成标准
-- 更新 pyproject.toml 依赖
+- 实现 F01 模型层（core/model.py）
+  - MimoClient + ModelConfig + load_config
+  - 同步/流式对话、重试机制、错误处理、日志
+- 编写测试（tests/test_model.py）：15 个测试通过
+- 创建 LEARNING_NOTES.md 学习笔记
+- 更新 core/__init__.py 导出新模块
 
 **当前进度:**
-- F01-F03 spec 已完成，代码未开始
-- 所有功能 status: pending
+- F01 status: done
+- F02-F10 status: pending
+- F01-F03 spec 已完成，F04-F10 spec 待写
 
 **下次从这里开始:**
-- 实现 F01 `core/model.py`（mimo API 客户端）
-- spec: `specs/F01-model.md`
-- 先 `pip install -e ".[dev]"` 安装依赖
+- 实现 F02 CLI 框架（cli/app.py）
+- spec: `specs/F02-cli.md`
+- 关键任务：rich 渲染 + prompt_toolkit 交互
 
 **备注:**
-- （无）
+- 集成测试需要设置 MIMO_API_KEY 环境变量
 
 ---
 
