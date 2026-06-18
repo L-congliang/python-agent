@@ -389,3 +389,63 @@ with self.client.messages.stream(**params) as stream:
 - [ ] type hints 类型注解
 - [ ] dataclass 用法
 - [ ] pytest 测试框架
+
+---
+
+## Anthropic SDK 流式 API（Session 6）
+
+**问题**: `stream.text_stream` 只返回文本 chunk，`tool_use` block 不在其中
+
+**解决**: 流结束后调用 `stream.get_final_message().content` 获取完整 content blocks
+
+```python
+# 只有文本
+for text in stream.text_stream:
+    print(text)
+
+# 完整 blocks（含 tool_use）
+final = stream.get_final_message()
+for block in final.content:
+    if block.type == "tool_use":
+        print(block.name, block.input)
+```
+
+**StreamResult 模式**: 同时返回 text 迭代器 + content_blocks
+
+```python
+@dataclass
+class StreamResult:
+    text: Iterator[str]           # 流式显示用
+    content_blocks: list[dict]    # 流结束后可用
+```
+
+## Generator Return Value
+
+Python generator 可以通过 `return` 返回值，调用方通过 `StopIteration.value` 获取
+
+```python
+def gen():
+    yield 1
+    yield 2
+    return "done"  # 不是 StopIteration
+
+g = gen()
+next(g)  # 1
+next(g)  # 2
+# next(g)  # StopIteration, value="done"
+```
+
+## 工具调用消息格式（Anthropic API）
+
+```json
+// assistant 消息（含 tool_use）
+{"role": "assistant", "content": [
+    {"type": "text", "text": "我来读取文件"},
+    {"type": "tool_use", "id": "t1", "name": "read", "input": {"path": "test.txt"}}
+]}
+
+// tool_result 消息
+{"role": "user", "content": [
+    {"type": "tool_result", "tool_use_id": "t1", "content": "文件内容"}
+]}
+```
