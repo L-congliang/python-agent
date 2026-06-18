@@ -24,31 +24,37 @@
   - 完整的消息格式定义（Anthropic API 格式）
   - spec 文件: `specs/F04-agent-loop.md`
 
-- **更新 feature_list.json**
-  - F03/F04 描述更新，反映 Claude Code 对齐
+- **实现 F03 Tool Protocol**
+  - 扩展 `core/types.py`：新增 PermissionDecision、ValidationResult、ToolResult（对齐 Claude Code）
+  - 新建 `core/context.py`：ToolUseContext、AbortController、FileReadState
+  - 新建 `tools/base.py`：Tool Protocol（15 个属性/方法）+ build_tool() 工厂函数
+  - 新建 `tools/registry.py`：ToolRegistry（注册、查询、转换、validate_and_execute）
+  - 旧的 ToolResult（有 tool_call_id）改名为 ToolCallResult，避免与新 ToolResult 冲突
+  - 新建 `tests/test_tool_protocol.py`：51 个测试，覆盖所有场景
+  - 全量测试 66 passed, 3 skipped
 
 ### 当前状态
 - F01 status: done
 - F02 status: pending（CLI 框架，可后续做）
-- F03 status: pending（spec 已重写，下一步实现）
-- F04 status: pending（spec 已写，依赖 F03）
+- F03 status: **done** ✓
+- F04 status: pending（spec 已写，依赖 F03 已完成）
 - F05-F10 status: pending
 
 ### 下次从这里开始
-1. **实现 F03 Tool Protocol**（`tools/base.py` + `tools/registry.py` + `core/context.py`）
-2. 对应 spec: `specs/F03-tool-protocol.md`
+1. **实现 F04 Agent 主循环**（`core/loop.py`）
+2. 对应 spec: `specs/F04-agent-loop.md`
 3. 关键任务：
-   - `PermissionDecision` / `ValidationResult` / `ToolResult` 类型
-   - `ToolUseContext` dataclass
-   - `Tool` Protocol（15 个属性/方法）
-   - `build_tool()` 工厂函数
-   - `ToolRegistry`（注册、查询、转换、执行）
-   - 测试覆盖所有场景
+   - `AgentLoop` class：run() / run_stream()
+   - 消息构建 → API 调用 → 解析 tool_use → 执行工具 → 注入结果 → 循环
+   - AbortController 中断支持
+   - max_turns / max_tool_calls 保护
+   - 测试覆盖
 
 ### 重要决策
 - **先做 F03 再做 F02**：工具系统是主循环的前置依赖，CLI 可以先用简单 print
 - **对齐 Claude Code 框架**：不是 demo 级别，而是工业级架构
 - **fail-closed 默认值**：安全第一，工具默认不并发、不只读
+- **ToolResult 改名**：旧的 ToolResult（API 用）改名为 ToolCallResult，新的 ToolResult（工具返回）对齐 Claude Code
 
 ### 阻塞点
 - （无）

@@ -10,7 +10,7 @@
 
 ## 最新状态
 
-- **当前功能**: F03 Tool Protocol + 注册系统（对齐 Claude Code）
+- **当前功能**: F03 Tool Protocol + 注册系统（对齐 Claude Code）— **已完成**
 - **最后更新**: 2026-06-18
 - **最后地点**: 家
 - **当前所在地**: 家
@@ -91,6 +91,40 @@
 - 先做 F03 再做 F02（工具系统是主循环的前置依赖）
 - 对齐 Claude Code 框架（不是 demo 级别，而是工业级架构）
 - fail-closed 默认值（安全第一）
+
+---
+
+### 2026-06-18 01:00 家
+
+**做了什么:**
+- **实现 F03 Tool Protocol**
+  - 扩展 `core/types.py`：新增 PermissionDecision、ValidationResult、ToolResult
+  - 旧 ToolResult（API 用）改名为 ToolCallResult，避免命名冲突
+  - 新建 `core/context.py`：ToolUseContext、AbortController、FileReadState
+  - 新建 `tools/base.py`：Tool Protocol（15 个属性/方法）+ build_tool() 工厂 + ToolImpl 实现类
+  - 新建 `tools/registry.py`：ToolRegistry（注册、查询、to_anthropic_tools、validate_and_execute）
+  - 更新 `core/__init__.py` 和 `tools/__init__.py` 导出
+
+- **编写测试**
+  - 新建 `tests/test_tool_protocol.py`：51 个测试
+  - 覆盖：PermissionDecision、ValidationResult、AbortController、FileReadState、build_tool 默认值/覆盖、Tool 协议检查、ToolRegistry 注册/查询/过滤、to_anthropic_tools、validate_and_execute 完整流程
+  - 全量测试 66 passed, 3 skipped
+
+**当前进度:**
+- F01 status: done
+- F02 status: pending（CLI 框架）
+- **F03 status: done** ✓
+- F04 status: pending（下一步）
+- F05-F10 status: pending
+
+**下次从这里开始:**
+1. 实现 F04 Agent 主循环（`core/loop.py`）
+2. spec: `specs/F04-agent-loop.md`
+3. 关键任务：AgentLoop class、消息构建、API 调用、tool_use 解析、工具执行、中断支持
+
+**重要决策:**
+- ToolResult 改名：旧的（API 用）→ ToolCallResult，新的（工具返回）→ ToolResult（对齐 Claude Code）
+- ToolImpl 用 dataclass 实现，而不是闭包（更容易调试和序列化）
 
 ---
 

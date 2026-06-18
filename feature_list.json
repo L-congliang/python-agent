@@ -21,7 +21,7 @@
       "name": "Tool Protocol + 注册系统（对齐 Claude Code）",
       "file": "tools/base.py, tools/registry.py, core/context.py",
       "spec": "specs/F03-tool-protocol.md",
-      "status": "pending",
+      "status": "done",
       "description": "Tool Protocol（15 属性）+ build_tool 工厂 + ToolUseContext + 权限决策 + ToolRegistry + validate_and_execute 流程"
     },
     {
