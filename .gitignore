@@ -37,6 +37,10 @@ env/
 .coverage
 htmlcov/
 
+# Environment
+.env
+.env.local
+
 # Misc
 .DS_Store
 *.log

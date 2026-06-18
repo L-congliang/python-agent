@@ -15,8 +15,12 @@ import pytest
 from unittest.mock import MagicMock
 
 import anthropic
+from dotenv import load_dotenv
 
 from agent.core.model import ModelConfig, MimoClient, load_config
+
+# 加载 .env 文件
+load_dotenv()
 
 
 class TestModelConfig:

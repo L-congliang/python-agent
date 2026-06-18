@@ -17,6 +17,7 @@ import time
 import logging
 
 import anthropic
+from dotenv import load_dotenv
 
 # 日志记录器
 logger = logging.getLogger("agent.model")
@@ -207,6 +208,8 @@ class MimoClient:
 def load_config() -> ModelConfig:
     """从环境变量加载配置
 
+    自动加载 .env 文件（如果存在）。
+
     环境变量:
         MIMO_API_KEY: API key（必须）
         MIMO_BASE_URL: API 地址（可选，默认 mimo 官方地址）
@@ -218,6 +221,7 @@ def load_config() -> ModelConfig:
     Raises:
         ValueError: MIMO_API_KEY 环境变量未设置
     """
+    load_dotenv()  # 自动加载 .env 文件
     api_key = os.environ.get("MIMO_API_KEY")
     if not api_key:
         raise ValueError("MIMO_API_KEY 环境变量未设置")
