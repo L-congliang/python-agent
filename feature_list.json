@@ -2,65 +2,81 @@
   "features": [
     {
       "id": "F01",
+      "name": "模型层 - mimo API 调通",
+      "file": "core/model.py",
+      "spec": "specs/F01-model.md",
+      "status": "pending",
+      "description": "用 Anthropic SDK 连接 mimo API，实现基础对话"
+    },
+    {
+      "id": "F02",
+      "name": "CLI 框架 - 终端 UI",
+      "file": "cli/app.py",
+      "spec": "specs/F02-cli.md",
+      "status": "pending",
+      "description": "rich + prompt_toolkit 搭建终端 UI，输入输出能跑"
+    },
+    {
+      "id": "F03",
       "name": "Tool Protocol 接口",
       "file": "tools/base.py",
-      "spec": "specs/F01-tool-protocol.md",
+      "spec": "specs/F03-tool-protocol.md",
       "status": "pending",
       "description": "定义 Tool Protocol，所有工具实现此接口"
     },
     {
-      "id": "F02",
+      "id": "F04",
       "name": "Agent 主循环",
       "file": "core/loop.py",
-      "spec": "specs/F02-agent-loop.md",
+      "spec": "specs/F04-agent-loop.md",
       "status": "pending",
-      "description": "实现 while True 主循环"
+      "description": "主循环：用户输入 → 模型回复 → 工具调用 → 结果返回"
     },
     {
-      "id": "F03",
+      "id": "F05",
       "name": "Bash 工具",
       "file": "tools/bash.py",
-      "spec": "specs/F03-bash-tool.md",
+      "spec": "specs/F05-bash-tool.md",
       "status": "pending",
-      "description": "执行 shell 命令的工具"
+      "description": "执行 shell 命令"
     },
     {
-      "id": "F04",
+      "id": "F06",
       "name": "文件读取工具",
       "file": "tools/file_read.py",
-      "spec": "specs/F04-file-read.md",
+      "spec": "specs/F06-file-read.md",
       "status": "pending",
       "description": "读取文件内容"
     },
     {
-      "id": "F05",
+      "id": "F07",
       "name": "文件写入工具",
       "file": "tools/file_write.py",
-      "spec": "specs/F05-file-write.md",
+      "spec": "specs/F07-file-write.md",
       "status": "pending",
       "description": "写入文件内容"
     },
     {
-      "id": "F06",
+      "id": "F08",
       "name": "搜索工具",
       "file": "tools/grep.py",
-      "spec": "specs/F06-grep-tool.md",
+      "spec": "specs/F08-grep-tool.md",
       "status": "pending",
       "description": "搜索文件内容"
     },
     {
-      "id": "F07",
+      "id": "F09",
       "name": "权限检查",
       "file": "permissions/checker.py",
-      "spec": "specs/F07-permission-checker.md",
+      "spec": "specs/F09-permission-checker.md",
       "status": "pending",
       "description": "检查工具是否有权限执行"
     },
     {
-      "id": "F08",
+      "id": "F10",
       "name": "上下文压缩",
       "file": "context/compressor.py",
-      "spec": "specs/F08-context-compressor.md",
+      "spec": "specs/F10-context-compressor.md",
       "status": "pending",
       "description": "压缩过长的对话历史"
     }
