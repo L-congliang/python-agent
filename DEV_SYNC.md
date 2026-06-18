@@ -10,14 +10,37 @@
 
 ## 最新状态
 
-- **当前功能**: F01 Tool Protocol
-- **最后更新**: 2026-06-18 22:30
-- **最后地点**: 家
+- **当前功能**: F01 模型层 - mimo API
+- **最后更新**: 2026-06-18 23:15
+- **最后地点**: 公司
 - **当前所在地**: 公司
 
 ---
 
 ## 工作日志
+
+### 2026-06-18 23:15 公司
+
+**做了什么:**
+- PRD 讨论：确认发布形态为 CLI，使用 mimo v2.5pro 模型
+- 重新规划功能顺序（F01 模型层 → F02 CLI → F03 Tool Protocol...）
+- 写了 F01 模型层 spec、F02 CLI spec
+- 更新 pyproject.toml 添加 rich、prompt-toolkit 依赖
+
+**当前进度:**
+- F01 spec 已写完，代码未开始
+- F02 spec 已写完，代码未开始
+- F03 spec 已有（原 F01）
+
+**下次从这里开始:**
+- 实现 F01 core/model.py（连接 mimo API）
+- mimo API 地址: https://token-plan-cn.xiaomimimo.com/anthropic
+- API key 已在 spec 中记录
+
+**备注:**
+- 只用 mimo 模型，不需要兼容 Claude API
+
+---
 
 ### 2026-06-18 22:30 家
 
