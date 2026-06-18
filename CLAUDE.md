@@ -35,12 +35,24 @@ make check
 
 ```
 1. 读 feature_list.json → 确认当前要做的功能
-2. 读 claude-progress.md → 了解上次 session 做到哪了
-3. 写代码
-4. 运行验证命令
-5. 验证通过 → 更新 progress → git commit → git push
-6. 验证失败 → 修复 → 重新验证
+2. 读 specs/F0X-*.md → 理解该功能的详细需求、接口、验收标准
+3. 读 claude-progress.md → 了解上次 session 做到哪了
+4. 写代码
+5. 运行验证命令（make check）
+6. 验证失败 → 修复 → 回到第 5 步
+7. 验证通过 → 更新 feature_list.json 和 claude-progress.md
+8. git add → git commit（写清楚改了什么）→ git push
 ```
+
+### Spec 文件
+
+每个功能在 `specs/` 目录下有一个对应的 spec 文件，包含：
+- **需求**：这个功能要做什么
+- **接口**：输入输出类型、方法签名
+- **场景**：需要覆盖的测试场景
+- **验收标准**：怎么算完成
+
+开始做某个功能前，必须先读对应的 spec 文件。没有 spec 的功能不能开始实现。
 
 ## 核心规则
 
@@ -60,6 +72,7 @@ make check
 ### 完成标准
 
 一个功能"完成"必须满足：
+- 实现符合 spec 文件中的要求
 - 代码写完且通过验证命令
 - 有对应的测试（如适用）
 - `feature_list.json` 中标记为 done

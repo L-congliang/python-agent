@@ -4,6 +4,7 @@
       "id": "F01",
       "name": "Tool Protocol 接口",
       "file": "tools/base.py",
+      "spec": "specs/F01-tool-protocol.md",
       "status": "pending",
       "description": "定义 Tool Protocol，所有工具实现此接口"
     },
@@ -11,50 +12,57 @@
       "id": "F02",
       "name": "Agent 主循环",
       "file": "core/loop.py",
+      "spec": "specs/F02-agent-loop.md",
       "status": "pending",
-      "description": "实现 while True 主循环：调用 LLM → 解析响应 → 执行工具 → 回传结果"
+      "description": "实现 while True 主循环"
     },
     {
       "id": "F03",
       "name": "Bash 工具",
       "file": "tools/bash.py",
+      "spec": "specs/F03-bash-tool.md",
       "status": "pending",
-      "description": "实现 bash 命令执行工具"
+      "description": "执行 shell 命令的工具"
     },
     {
       "id": "F04",
       "name": "文件读取工具",
       "file": "tools/file_read.py",
+      "spec": "specs/F04-file-read.md",
       "status": "pending",
-      "description": "实现文件读取工具"
+      "description": "读取文件内容"
     },
     {
       "id": "F05",
       "name": "文件写入工具",
       "file": "tools/file_write.py",
+      "spec": "specs/F05-file-write.md",
       "status": "pending",
-      "description": "实现文件写入工具"
+      "description": "写入文件内容"
     },
     {
       "id": "F06",
       "name": "搜索工具",
       "file": "tools/grep.py",
+      "spec": "specs/F06-grep-tool.md",
       "status": "pending",
-      "description": "实现文件内容搜索工具"
+      "description": "搜索文件内容"
     },
     {
       "id": "F07",
       "name": "权限检查",
       "file": "permissions/checker.py",
+      "spec": "specs/F07-permission-checker.md",
       "status": "pending",
-      "description": "实现 ALLOW/DENY/ASK 权限系统"
+      "description": "检查工具是否有权限执行"
     },
     {
       "id": "F08",
       "name": "上下文压缩",
       "file": "context/compressor.py",
+      "spec": "specs/F08-context-compressor.md",
       "status": "pending",
-      "description": "实现截断、摘要、裁剪三种压缩策略"
+      "description": "压缩过长的对话历史"
     }
   ]
 }
