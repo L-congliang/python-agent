@@ -1,12 +1,35 @@
 # CLAUDE.md
 
-本项目通过逐步实现，学习 Claude Code 的 Agent 架构。
+本项目模仿 Claude Code，构建一个终端里的 AI 编程助手。
 
-## 项目概览
+## 项目定位
 
-- **目标**: 从零构建一个 Python Agent，理解 tool 调用、主循环、错误处理、上下文管理等核心机制
-- **技术栈**: Python 3.12+, anthropic SDK, pydantic, pytest
-- **结构**: `src/agent/` (core/tools/permissions/context), `tests/`, `docs/`
+**这是实习项目，不是 demo。** 代码质量要达到能拿出去面试讲解的水平。
+
+- **目标**: 构建一个类 Claude Code 的 CLI Agent，用 mimo v2.5pro 模型
+- **发布形态**: CLI 工具（终端交互）
+- **用户**: 开发者（通过 pip install 使用）
+- **差异化**: 开源、可学习、使用国产模型
+
+## 技术栈
+
+- **模型**: mimo v2.5pro（小米），通过 Anthropic 兼容 API 调用
+- **API 地址**: `https://token-plan-cn.xiaomimimo.com/anthropic`
+- **SDK**: `anthropic`（只用 mimo，不需要兼容其他模型）
+- **终端 UI**: `rich`（渲染）+ `prompt_toolkit`（输入交互）
+- **其他**: pydantic, jsonschema, pytest
+- **Python**: 3.12+
+
+## 项目结构
+
+```
+src/agent/
+├── core/           # 核心模块（model.py 模型层, loop.py 主循环, types.py 类型）
+├── tools/          # 工具系统（base.py 协议, registry.py 注册, 各工具实现）
+├── permissions/    # 权限控制
+├── context/        # 上下文管理
+└── cli/            # 终端 UI（app.py）
+```
 
 ## 验证命令
 
