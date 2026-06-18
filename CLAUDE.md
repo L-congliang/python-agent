@@ -34,14 +34,16 @@ make check
 ## 开发流程
 
 ```
-1. 读 feature_list.json → 确认当前要做的功能
-2. 读 specs/F0X-*.md → 理解该功能的详细需求、接口、验收标准
-3. 读 claude-progress.md → 了解上次 session 做到哪了
-4. 写代码
-5. 运行验证命令（make check）
-6. 验证失败 → 修复 → 回到第 5 步
-7. 验证通过 → 更新 feature_list.json 和 claude-progress.md
-8. git add → git commit（写清楚改了什么）→ git push
+1. 读 DEV_SYNC.md → 了解上次在哪个地点做了什么
+2. 读 feature_list.json → 确认当前要做的功能
+3. 读 specs/F0X-*.md → 理解该功能的详细需求、接口、验收标准
+4. 读 claude-progress.md → 了解上次 session 做到哪了
+5. 写代码
+6. 运行验证命令（make check）
+7. 验证失败 → 修复 → 回到第 6 步
+8. 验证通过 → 更新 feature_list.json 和 claude-progress.md
+9. 更新 DEV_SYNC.md（记录本次工作内容和地点）
+10. git add → git commit（写清楚改了什么）→ git push
 ```
 
 ### Spec 文件
@@ -86,6 +88,7 @@ make check
 
 ### Session 结束前
 
+- 更新 `DEV_SYNC.md`（记录本次地点和工作内容）
 - 更新 `claude-progress.md`
 - 更新 `feature_list.json`
 - 记录未完成的工作和阻塞点
