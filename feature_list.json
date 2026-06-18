@@ -29,7 +29,7 @@
       "name": "Agent 主循环（对齐 Claude Code）",
       "file": "core/loop.py",
       "spec": "specs/F04-agent-loop.md",
-      "status": "pending",
+      "status": "done",
       "description": "AgentLoop：流式调用→解析 tool_use→执行工具→注入结果→循环，含中断支持和轮次保护"
     },
     {

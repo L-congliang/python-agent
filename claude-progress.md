@@ -82,3 +82,38 @@
 
 ### 下次从这里开始
 - 写 F01 的 spec 文件
+
+## Session 6 — 2026-06-18 F04 Agent 主循环
+
+**功能**: F04 Agent 主循环
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 修改 model.py：新增 StreamResult，修改 chat_stream() 返回 StreamResult
+2. ✅ 创建 loop.py：LoopConfig + AgentLoop（run、run_stream、reset、abort）
+3. ✅ 更新 core/__init__.py 导出
+4. ✅ 更新 test_model.py 适配新 API
+5. ✅ 创建 test_agent_loop.py：18 个测试，全部通过
+6. ✅ 更新 feature_list.json（F04 → done）
+
+### 关键设计决策
+
+- **StreamResult 解决 tool_use 丢失问题**：stream.text_stream 只返回文本，tool_use block 不在其中。改为返回 StreamResult，流结束后通过 get_final_message().content 获取完整 content blocks
+- **run() 内部用 chat_stream()**：虽然 run() 是同步返回，但内部用 chat_stream() 获取 content_blocks 以支持工具调用
+- **run_stream() 流式输出 + 工具阻塞**：文本 chunk 流式 yield，工具调用阻塞执行后继续循环
+
+### 测试覆盖
+
+- 纯文本对话（同步 + 流式）
+- 单次工具调用（同步 + 流式）
+- 多次工具调用
+- 工具执行失败
+- 最大轮次超限
+- 最大工具调用次数超限
+- 中断支持（AbortController）
+- 消息历史累积
+- reset 清空历史
+- 消息历史副本隔离
+- 配置测试（默认值、自定义、系统提示）
+- 工具结果格式（正确注入、错误标记）

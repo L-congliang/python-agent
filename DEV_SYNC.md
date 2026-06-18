@@ -156,3 +156,20 @@
 **备注:**
 -
 -->
+
+### 2026-06-18 Session 6 - F04 Agent 主循环
+
+**改动文件**:
+- src/agent/core/model.py (修改: 新增 StreamResult)
+- src/agent/core/loop.py (新增: LoopConfig + AgentLoop)
+- src/agent/core/__init__.py (修改: 更新导出)
+- tests/test_model.py (修改: 适配新 API)
+- tests/test_agent_loop.py (新增: 18 个测试)
+- feature_list.json (修改: F04 done)
+- claude-progress.md (修改: 添加 session 6)
+
+**关键决策**: StreamResult 解决 tool_use 丢失; run() 内部用 chat_stream()
+
+**测试**: 84 passed, 3 skipped
+
+**下一步**: F02 CLI 或 F05-F10 工具

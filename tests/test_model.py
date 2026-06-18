@@ -143,17 +143,27 @@ class TestMimoClient:
         assert call_kwargs.kwargs["system"] == "你是一个测试助手"
 
     def test_chat_stream_yields_chunks(self, client):
-        """流式对话逐块返回文本"""
+        """流式对话逐块返回文本 + content_blocks"""
         # Mock stream context manager
         mock_stream = MagicMock()
         mock_stream.text_stream = ["你", "好", "！"]
+        # Mock get_final_message 返回带 content 的 message
+        mock_final_msg = MagicMock()
+        mock_block = MagicMock()
+        mock_block.model_dump.return_value = {"type": "text", "text": "你好！"}
+        mock_final_msg.content = [mock_block]
+        mock_stream.get_final_message.return_value = mock_final_msg
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
         mock_stream.__exit__ = MagicMock(return_value=False)
         client._client.messages.stream = MagicMock(return_value=mock_stream)
 
-        chunks = list(client.chat_stream([{"role": "user", "content": "你好"}]))
+        result = client.chat_stream([{"role": "user", "content": "你好"}])
+        chunks = list(result.text)
         assert chunks == ["你", "好", "！"]
         assert "".join(chunks) == "你好！"
+        # 流结束后 content_blocks 应被填充
+        assert len(result.content_blocks) == 1
+        assert result.content_blocks[0] == {"type": "text", "text": "你好！"}
 
     def test_retry_on_rate_limit(self, client):
         """限流时自动重试"""
@@ -262,7 +272,10 @@ class TestMimoClientIntegration:
 
     def test_stream_yields_chunks(self, client):
         """流式输出逐块返回，拼接后是完整回复"""
-        chunks = list(client.chat_stream([{"role": "user", "content": "说一句话"}]))
+        result = client.chat_stream([{"role": "user", "content": "说一句话"}])
+        chunks = list(result.text)
         assert len(chunks) > 0
         full = "".join(chunks)
         assert len(full) > 0
+        # content_blocks 在流结束后应该被填充
+        assert len(result.content_blocks) > 0

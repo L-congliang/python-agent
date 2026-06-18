@@ -9,7 +9,7 @@
 - 封装 SDK 而不是直接暴露：调用方只关心 messages 和返回的 str，不关心 SDK 细节
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Iterator
 from typing import Any
 import os
@@ -21,6 +21,23 @@ from dotenv import load_dotenv
 
 # 日志记录器
 logger = logging.getLogger("agent.model")
+
+
+@dataclass
+class StreamResult:
+    """流式调用结果
+
+    同时提供文本 chunk 迭代器和完整的 content blocks。
+    解决 text_stream 只包含文本、不包含 tool_use block 的问题。
+
+    使用方式:
+        result = client.chat_stream(messages, system)
+        for chunk in result.text:       # 流式显示
+            print(chunk, end="")
+        blocks = result.content_blocks  # 解析 tool_use
+    """
+    text: Iterator[str]
+    content_blocks: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -109,24 +126,28 @@ class MimoClient:
         logger.info("API response: %d chars, %.2fs", len(result), elapsed)
         return result
 
-    def chat_stream(self, messages: list[dict[str, str]], system: str = "") -> Iterator[str]:
-        """流式对话，逐块返回文本
+    def chat_stream(self, messages: list[dict[str, str]], system: str = "") -> StreamResult:
+        """流式对话，返回文本迭代器 + 完整 content blocks
+
+        返回 StreamResult 而不是 Iterator[str]，因为 tool_use block
+        不在 text_stream 中，需要通过 content_blocks 获取。
 
         Args:
             messages: 对话历史
             system: 系统提示词
 
-        Yields:
-            每个文本块（chunk）
+        Returns:
+            StreamResult: 包含 text（迭代器）和 content_blocks（流结束后可用）
 
         Raises:
             同 chat()
         """
         logger.info("API stream call: %d messages, system=%d chars", len(messages), len(system))
         start_time = time.monotonic()
+        result = StreamResult(text=iter(()))  # 占位，下面替换
 
         def _stream() -> Iterator[str]:
-            """实际的流式 API 调用"""
+            """流式生成器：yield text chunk，return 时填充 content_blocks"""
             with self._client.messages.stream(
                 model=self.config.model,
                 max_tokens=self.config.max_tokens,
@@ -135,18 +156,21 @@ class MimoClient:
             ) as stream:
                 for text in stream.text_stream:
                     yield text
+                # 流结束后，获取完整 message 的 content blocks
+                # 此时 stream 仍处于 open 状态（在 with 块内）
+                final_message = stream.get_final_message()
+                result.content_blocks = [block.model_dump() for block in final_message.content]
 
-        # 流式调用需要特殊处理重试：第一次迭代成功后就不再重试
-        # 这里简化处理：直接调用，出错时由调用方处理
-        # TODO: 如果需要流式重试，需要缓存已收到的 chunks
         try:
-            yield from _stream()
+            result.text = _stream()
             elapsed = time.monotonic() - start_time
-            logger.info("API stream completed: %.2fs", elapsed)
+            logger.info("API stream setup: %.2fs", elapsed)
         except Exception:
             elapsed = time.monotonic() - start_time
             logger.error("API stream failed: %.2fs", elapsed)
             raise
+
+        return result
 
     def _retry(self, fn: Any) -> Any:
         """指数退避重试
