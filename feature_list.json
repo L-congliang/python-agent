@@ -2,11 +2,11 @@
   "features": [
     {
       "id": "F01",
-      "name": "模型层 - mimo API 调通",
+      "name": "模型层 - mimo API 客户端",
       "file": "core/model.py",
       "spec": "specs/F01-model.md",
       "status": "pending",
-      "description": "用 Anthropic SDK 连接 mimo API，实现基础对话"
+      "description": "封装 mimo API，含重试、超时、错误处理、日志"
     },
     {
       "id": "F02",
@@ -14,15 +14,15 @@
       "file": "cli/app.py",
       "spec": "specs/F02-cli.md",
       "status": "pending",
-      "description": "rich + prompt_toolkit 搭建终端 UI，输入输出能跑"
+      "description": "rich + prompt_toolkit，Markdown 渲染、流式输出、工具面板"
     },
     {
       "id": "F03",
-      "name": "Tool Protocol 接口",
-      "file": "tools/base.py",
+      "name": "Tool Protocol + 注册系统",
+      "file": "tools/base.py, tools/registry.py",
       "spec": "specs/F03-tool-protocol.md",
       "status": "pending",
-      "description": "定义 Tool Protocol，所有工具实现此接口"
+      "description": "Tool Protocol + ToolRegistry + 参数校验 + JSON Schema 转换"
     },
     {
       "id": "F04",
