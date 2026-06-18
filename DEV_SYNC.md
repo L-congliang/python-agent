@@ -10,7 +10,7 @@
 
 ## 最新状态
 
-- **当前功能**: F02 CLI 框架 - 终端 UI
+- **当前功能**: F03 Tool Protocol + 注册系统（对齐 Claude Code）
 - **最后更新**: 2026-06-18
 - **最后地点**: 家
 - **当前所在地**: 家
@@ -50,6 +50,47 @@
 
 **备注:**
 - 集成测试需要设置 MIMO_API_KEY 环境变量
+
+---
+
+### 2026-06-18 23:00 家
+
+**做了什么:**
+- **Claude Code 源码深度分析**
+  - 读了泄露源码的核心模块（Tool.ts、query.ts、tools.ts、main.tsx 等）
+  - 分析了 Tool 系统、主循环、权限系统、工具列表
+  - 创建了 `docs/claude-code-architecture.md`（完整架构分析文档）
+  - 明确了对齐目标：框架 100% 对齐，工具数量 30%
+
+- **重写 F03 Tool Protocol spec**
+  - 对齐 Claude Code 的 Tool 类型（30+ 属性，先实现 15 个核心）
+  - 新增 ToolUseContext、PermissionDecision、ValidationResult
+  - 新增 build_tool() 工厂函数（fail-closed 默认值）
+  - 新增 validate_and_execute() 完整执行流程
+
+- **新增 F04 Agent 主循环 spec**
+  - 对齐 Claude Code 的 query.ts（68KB 核心循环）
+  - 设计 AgentLoop class：流式调用→解析 tool_use→执行工具→注入结果→循环
+  - 含中断支持（AbortController）、轮次保护（max_turns）
+
+- **更新 feature_list.json 和 claude-progress.md**
+
+**当前进度:**
+- F01 status: done
+- F02 status: pending（CLI 框架，后续做）
+- F03 status: pending（spec 已重写，下一步实现）
+- F04 status: pending（spec 已写，依赖 F03）
+- F05-F10 status: pending
+
+**下次从这里开始:**
+1. 实现 F03 Tool Protocol（`tools/base.py` + `tools/registry.py` + `core/context.py`）
+2. spec: `specs/F03-tool-protocol.md`
+3. 关键任务：Tool Protocol + build_tool + ToolRegistry + 测试
+
+**重要决策:**
+- 先做 F03 再做 F02（工具系统是主循环的前置依赖）
+- 对齐 Claude Code 框架（不是 demo 级别，而是工业级架构）
+- fail-closed 默认值（安全第一）
 
 ---
 

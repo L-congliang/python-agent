@@ -18,19 +18,19 @@
     },
     {
       "id": "F03",
-      "name": "Tool Protocol + 注册系统",
-      "file": "tools/base.py, tools/registry.py",
+      "name": "Tool Protocol + 注册系统（对齐 Claude Code）",
+      "file": "tools/base.py, tools/registry.py, core/context.py",
       "spec": "specs/F03-tool-protocol.md",
       "status": "pending",
-      "description": "Tool Protocol + ToolRegistry + 参数校验 + JSON Schema 转换"
+      "description": "Tool Protocol（15 属性）+ build_tool 工厂 + ToolUseContext + 权限决策 + ToolRegistry + validate_and_execute 流程"
     },
     {
       "id": "F04",
-      "name": "Agent 主循环",
+      "name": "Agent 主循环（对齐 Claude Code）",
       "file": "core/loop.py",
       "spec": "specs/F04-agent-loop.md",
       "status": "pending",
-      "description": "主循环：用户输入 → 模型回复 → 工具调用 → 结果返回"
+      "description": "AgentLoop：流式调用→解析 tool_use→执行工具→注入结果→循环，含中断支持和轮次保护"
     },
     {
       "id": "F05",

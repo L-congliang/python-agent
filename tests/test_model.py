@@ -12,15 +12,22 @@ F01 模型层测试
 
 import os
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import anthropic
 from dotenv import load_dotenv
 
 from agent.core.model import ModelConfig, MimoClient, load_config
 
-# 加载 .env 文件
+# 加载 .env 文件（集成测试需要）
 load_dotenv()
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    """每个测试前清除 .env 的影响，确保环境变量干净。"""
+    for key in ("MIMO_API_KEY", "MIMO_BASE_URL", "MIMO_MODEL"):
+        monkeypatch.delenv(key, raising=False)
 
 
 class TestModelConfig:
@@ -85,9 +92,10 @@ class TestLoadConfig:
     def test_missing_api_key_raises_error(self, monkeypatch):
         """未设置 API key 时抛出 ValueError"""
         monkeypatch.delenv("MIMO_API_KEY", raising=False)
-
-        with pytest.raises(ValueError, match="MIMO_API_KEY"):
-            load_config()
+        # mock load_dotenv 防止它从 .env 文件重新加载
+        with patch("agent.core.model.load_dotenv"):
+            with pytest.raises(ValueError, match="MIMO_API_KEY"):
+                load_config()
 
 
 class TestMimoClient:

@@ -2,6 +2,17 @@
 
 记录开发过程中遇到的基础概念，方便复习。
 
+## 目录
+
+1. [httpx vs Anthropic SDK](#1-httpx-vs-anthropic-sdk)
+2. [Streaming（流式）vs Sync（同步）](#2-streaming流式vs-sync同步)
+3. [重试策略（Retry）](#3-重试策略retry)
+4. [HTTP 状态码与错误处理](#4-http-状态码与错误处理)
+5. [配置管理](#5-配置管理)
+6. [日志记录](#6-日志记录)
+7. [ModelConfig vs MimoClient 设计模式](#7-modelconfig-vs-mimoclient-设计模式)
+8. [SSE vs WebSocket（流式传输）](#8-sse-vs-websocket流式传输)
+
 ---
 
 ## 1. httpx vs Anthropic SDK
@@ -286,6 +297,89 @@ logger.error("API error: %s", str(e))
 | WARNING | 警告 | 重试、限流 |
 | ERROR | 错误 | API 调用失败 |
 | CRITICAL | 严重错误 | 系统崩溃 |
+
+---
+
+## 七、ModelConfig vs MimoClient 设计模式
+
+**问题**：为什么要分成两个类？
+
+### ModelConfig — 配置容器
+
+```python
+@dataclass
+class ModelConfig:
+    api_key: str
+    base_url: str = "https://..."
+    model: str = "mimo-v2.5-pro"
+    max_tokens: int = 4096
+```
+
+**职责**：只存数据 + 验证数据，不干业务逻辑。
+
+**类比**：餐厅的"菜单"，记录食材、调料、份量。
+
+### MimoClient — 业务执行者
+
+```python
+class MimoClient:
+    def __init__(self, config: ModelConfig):
+        self.config = config
+
+    def chat(self, messages, system) -> str:
+        ...
+```
+
+**职责**：接收配置，执行业务。
+
+**类比**：餐厅的"厨师"，按菜单做菜。
+
+### 分离的好处
+
+- **配置复用**：一份配置可以创建多个客户端
+- **单一职责**：改配置验证不影响业务代码，改业务逻辑不影响配置
+- **测试方便**：测试配置验证不需要真的连 API
+
+---
+
+## 八、SSE vs WebSocket（流式传输）
+
+### 三种传输方式对比
+
+| | HTTP 普通请求 | SSE | WebSocket |
+|---|---|---|---|
+| **方向** | 单次请求/响应 | 服务器单向推送 | 双向通信 |
+| **协议** | HTTP | HTTP | 独立协议(ws://) |
+| **连接** | 请求完就断 | 保持长连接 | 保持长连接 |
+| **场景** | 普通 API | AI 流式输出 | 聊天室、游戏 |
+
+### SSE（Server-Sent Events）
+
+```
+客户端 ──── 请求 ────→ 服务器
+客户端 ←── chunk1 ──── 服务器
+客户端 ←── chunk2 ──── 服务器
+客户端 ←── [DONE] ──── 服务器
+```
+
+**特点**：基于 HTTP，服务器单向推送，客户端只能接收。
+
+### 为什么 AI 用 SSE？
+
+- AI 场景：客户端发一次请求，服务器持续输出
+- SSE 简单、基于 HTTP、单向推送刚好满足
+- WebSocket 太重（双向通信不需要）
+
+### 实际代码
+
+```python
+# SDK 内部发送 HTTP POST，带 stream=true
+# 服务器返回 SSE 流（text/event-stream）
+# SDK 解析 chunk，通过 text_stream 逐个吐出
+with self.client.messages.stream(**params) as stream:
+    for text in stream.text_stream:
+        yield text  # 每次 yield 几个字，形成打字机效果
+```
 
 ---
 
