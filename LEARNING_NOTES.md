@@ -449,3 +449,53 @@ next(g)  # 2
     {"type": "tool_result", "tool_use_id": "t1", "content": "文件内容"}
 ]}
 ```
+
+---
+
+## F03 Tool Protocol 核心概念（Session 6 讨论）
+
+### 闭包（Closure）
+
+函数记住了它被创建时的环境。
+
+```python
+def make_greeting(name):
+    def greet():
+        return f"你好，{name}"  # greet 记住了 name
+    return greet
+
+say_hello = make_greeting("小明")
+print(say_hello())  # "你好，小明" — name 本该消失，但被记住了
+```
+
+在 ToolImpl 里，闭包用来存储可选行为覆盖（如 `is_read_only=lambda input: True`）。
+
+### Tool vs ToolImpl vs build_tool
+
+- **Tool** (Protocol) — 接口定义，不能实例化
+- **ToolImpl** (dataclass) — 具体实现，Tool 的实例
+- **build_tool()** — 工厂函数，帮你创建 ToolImpl
+
+工具开发者只用 `build_tool()`，不需要直接碰 ToolImpl。
+
+### Tool Protocol vs 简单函数映射
+
+```python
+# 简单方式（demo 级别）
+TOOLS = [{"name": "bash", ...}]        # 给 API
+HANDLERS = {"bash": run_bash}           # 给自己用
+output = HANDLERS["bash"](command="ls") # 直接调用
+
+# Protocol 方式（框架级别）
+tool = build_tool(name="bash", ..., execute_fn=run_bash)
+registry.register(tool)
+result = registry.validate_and_execute("bash", args, ctx)  # 5 步流程
+```
+
+区别：简单方式没有权限控制、输入校验、行为标记。工具少时够用，工具多时 Protocol 更可扩展。
+
+### registry.register(tool)
+
+就是把工具存进字典 `self._tools[tool.name] = tool`，带类型检查和重复检查。
+
+对比 demo 的两个平行结构（TOOLS + HANDLERS），registry 把信息和行为绑在一个对象里，注册一次全搞定。
