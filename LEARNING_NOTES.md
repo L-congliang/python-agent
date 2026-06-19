@@ -4,14 +4,25 @@
 
 ## 目录
 
+### F01 模型层
 1. [httpx vs Anthropic SDK](#1-httpx-vs-anthropic-sdk)
 2. [Streaming（流式）vs Sync（同步）](#2-streaming流式vs-sync同步)
 3. [重试策略（Retry）](#3-重试策略retry)
 4. [HTTP 状态码与错误处理](#4-http-状态码与错误处理)
 5. [配置管理](#5-配置管理)
 6. [日志记录](#6-日志记录)
-7. [ModelConfig vs MimoClient 设计模式](#7-modelconfig-vs-mimoclient-设计模式)
-8. [SSE vs WebSocket（流式传输）](#8-sse-vs-websocket流式传输)
+7. [ModelConfig vs MimoClient 设计模式](#七modelconfig-vs-mimoclient-设计模式)
+8. [SSE vs WebSocket（流式传输）](#八sse-vs-websocket流式传输)
+
+### F03/F04 工具协议与主循环
+9. [Anthropic SDK 流式 API](#anthropic-sdk-流式-apisession-6)
+10. [Generator Return Value](#generator-return-value)
+11. [工具调用消息格式](#工具调用消息格式anthropic-api)
+12. [F03 Tool Protocol 核心概念](#f03-tool-protocol-核心概念session-6讨论)
+    - [闭包（Closure）](#闭包closure)
+    - [Tool vs ToolImpl vs build_tool](#tool-vs-toolimpl-vs-build_tool)
+    - [Tool Protocol vs 简单函数映射](#tool-protocol-vs-简单函数映射)
+    - [registry.register(tool)](#registryregistertool)
 
 ---
 
