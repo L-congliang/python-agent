@@ -23,6 +23,16 @@
     - [Tool vs ToolImpl vs build_tool](#tool-vs-toolimpl-vs-build_tool)
     - [Tool Protocol vs 简单函数映射](#tool-protocol-vs-简单函数映射)
     - [registry.register(tool)](#registryregistertool)
+13. [F03 详细讲解：context.py](#f03-详细讲解contextpy--工具执行上下文session-6)
+    - [AbortController](#abortcontroller--中断控制)
+    - [FileReadState](#filereadstate--文件缓存)
+    - [ToolUseContext](#toolusecontext--工具的工作环境)
+14. [F03 详细讲解：types.py](#f03-详细讲解typespy--权限与校验类型session-6)
+    - [PermissionDecision](#permissiondecision--权限决策)
+    - [ValidationResult](#validationresult--输入校验)
+    - [ToolResult](#toolresult--工具执行结果)
+15. [F03 详细讲解：registry.py](#f03-详细讲解registrypy--5-步执行流程session-6)
+16. [F03 组件总览](#f03-组件总览)
 
 ---
 
@@ -510,3 +520,102 @@ result = registry.validate_and_execute("bash", args, ctx)  # 5 步流程
 就是把工具存进字典 `self._tools[tool.name] = tool`，带类型检查和重复检查。
 
 对比 demo 的两个平行结构（TOOLS + HANDLERS），registry 把信息和行为绑在一个对象里，注册一次全搞定。
+
+---
+
+## F03 详细讲解：context.py — 工具执行上下文（Session 6）
+
+### AbortController — 中断控制
+
+就是一个布尔开关。用户按 Ctrl+C 时调用 `abort()`，工具执行前检查 `is_aborted`。
+
+为什么不用 `raise KeyboardInterrupt`？因为中断需要跨函数传递——用户在主循环里按 Ctrl+C，但需要中断的是正在执行的工具。AbortController 是一个共享对象，谁都能检查它。
+
+### FileReadState — 文件缓存
+
+就是一个字典的封装。同一次对话中，可能多次读同一个文件，缓存避免重复磁盘 I/O。
+
+### ToolUseContext — 工具的"工作环境"
+
+工具执行时需要知道很多外部信息（工作目录、是否中断、文件缓存等）。如果一个个传参，函数签名会很长。打包成一个对象，传一个就够了。
+
+为什么不直接传全局状态？因为 ToolUseContext 是工具看到的"视图"——只暴露工具需要的部分，不暴露全部应用状态。这是最小权限原则。
+
+---
+
+## F03 详细讲解：types.py — 权限与校验类型（Session 6）
+
+### PermissionDecision — 权限决策
+
+三种结果：allow（允许）、deny（拒绝）、ask（询问用户）。
+
+```python
+PermissionDecision.allow()                    # 允许执行
+PermissionDecision.allow(updated_input={...}) # 允许，但修改参数
+PermissionDecision.deny("权限不足")            # 拒绝，附原因
+PermissionDecision.ask("要执行 rm 吗？")       # 询问用户
+```
+
+`updated_input` 的作用：权限检查时可以修改参数。比如工具要求绝对路径，你可以把相对路径改成绝对路径再放行。
+
+### ValidationResult — 输入校验
+
+校验失败不是异常，是正常流程。用返回值而不是异常，调用方处理更统一。
+
+```python
+ValidationResult.success()                    # 校验通过
+ValidationResult.failure("路径不能为空")       # 校验失败
+```
+
+### ToolResult — 工具执行结果
+
+```python
+ToolResult(output="文件内容")                  # 成功
+ToolResult(output="文件不存在", is_error=True)  # 失败
+ToolResult(output="ok", new_messages=[...])    # 成功，附带新消息
+```
+
+`new_messages`：有些工具执行后需要往对话历史里注入额外消息。大多数工具用不到。
+
+---
+
+## F03 详细讲解：registry.py — 5 步执行流程（Session 6）
+
+`validate_and_execute` 是 registry 的核心方法：
+
+```
+查找工具 → 检查启用 → 校验输入 → 检查权限 → 执行
+   ↓ 失败      ↓ 失败      ↓ 失败      ↓ 失败      ↓ 失败
+   返回错误    返回错误    返回错误    返回错误    返回错误
+```
+
+关键设计：不抛异常。每一步失败都返回 `ToolResult(is_error=True)`。
+
+为什么？因为主循环需要把错误信息返回给模型，让模型知道出了什么问题并决定下一步。如果抛异常，主循环得自己猜发生了什么。
+
+---
+
+## F03 组件总览
+
+```
+types.py          定义数据结构
+  ├─ PermissionDecision  权限决策（allow/deny/ask）
+  ├─ ValidationResult    校验结果（success/failure）
+  ├─ ToolResult          工具执行结果（output + is_error）
+  └─ ToolCall            API 返回的工具调用请求
+
+context.py        定义执行环境
+  ├─ AbortController     中断开关
+  ├─ FileReadState       文件缓存
+  └─ ToolUseContext       工具能访问的全部上下文
+
+tools/base.py     定义工具接口
+  ├─ Tool (Protocol)     15 个属性/方法的接口
+  ├─ ToolImpl            具体实现（dataclass）
+  └─ build_tool()        工厂函数
+
+tools/registry.py 管理工具
+  ├─ register()          注册工具
+  ├─ to_anthropic_tools() 转成 API 格式
+  └─ validate_and_execute() 5 步执行流程
+```
