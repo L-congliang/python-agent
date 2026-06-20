@@ -150,6 +150,18 @@ class Message:
 
 @dataclass
 class StreamEvent:
-    """流式事件"""
-    type: str           # "text", "tool_use", "tool_result"
+    """流式事件
+
+    AgentLoop 产生的事件类型，由 UI 层消费渲染。
+    对齐 Claude Code 的事件系统。
+
+    事件类型:
+    - text: 模型回复的文本 chunk
+    - tool_call: 模型请求调用工具
+    - tool_result: 工具执行结果
+    """
+    type: str           # "text", "tool_call", "tool_result"
     content: Any = None
+    tool_name: str | None = None      # tool_call 时的工具名
+    tool_input: dict | None = None    # tool_call 时的参数
+    is_error: bool = False            # tool_result 时是否出错

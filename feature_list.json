@@ -79,6 +79,46 @@
       "spec": "specs/F10-context-compressor.md",
       "status": "pending",
       "description": "压缩过长的对话历史"
+    },
+    {
+      "id": "F11",
+      "name": "Glob 文件查找",
+      "file": "tools/glob.py",
+      "spec": "specs/F11-glob.md",
+      "status": "pending",
+      "description": "按模式匹配查找文件（**/*.py 等）"
+    },
+    {
+      "id": "F12",
+      "name": "Sub-agent 派生",
+      "file": "core/subagent.py",
+      "spec": "specs/F12-subagent.md",
+      "status": "pending",
+      "description": "主 Agent 派生子 Agent 并行执行任务"
+    },
+    {
+      "id": "F13",
+      "name": "MCP 集成",
+      "file": "tools/mcp.py",
+      "spec": "specs/F13-mcp.md",
+      "status": "pending",
+      "description": "Model Context Protocol，连接外部工具服务"
+    },
+    {
+      "id": "F14",
+      "name": "Session 持久化",
+      "file": "context/session.py",
+      "spec": "specs/F14-session.md",
+      "status": "pending",
+      "description": "对话历史持久化，支持恢复和跨 session 记忆"
+    },
+    {
+      "id": "F15",
+      "name": "Hooks 系统",
+      "file": "core/hooks.py",
+      "spec": "specs/F15-hooks.md",
+      "status": "pending",
+      "description": "工具调用前后的回调机制（日志、权限确认、自定义逻辑）"
     }
   ]
 }

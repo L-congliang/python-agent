@@ -34,6 +34,16 @@
 15. [F03 详细讲解：registry.py](#f03-详细讲解registrypy--5-步执行流程session-6)
 16. [F03 组件总览](#f03-组件总览)
 
+### F05 Bash 工具
+17. [F05 Bash 工具核心概念](#f05-bash-工具核心概念)
+    - [subprocess](#subprocess--python-执行外部命令)
+    - [退出码](#退出码returncode)
+    - [stdout vs stderr](#stdout-vs-stderr)
+    - [超时](#超时timeout)
+    - [工作目录](#工作目录cwd)
+    - [Shell 检测](#shell-检测)
+    - [输出截断](#输出截断)
+
 ---
 
 ## 1. httpx vs Anthropic SDK
@@ -619,3 +629,47 @@ tools/registry.py 管理工具
   ├─ to_anthropic_tools() 转成 API 格式
   └─ validate_and_execute() 5 步执行流程
 ```
+
+---
+
+## F05 Bash 工具核心概念
+
+### subprocess — Python 执行外部命令
+
+Python 标准库模块，用于执行系统命令（如 `ls`、`git status`）。
+
+```python
+import subprocess
+result = subprocess.run(["ls", "-la"], capture_output=True, text=True, timeout=30)
+# result.stdout   → 正常输出
+# result.stderr   → 错误信息
+# result.returncode → 退出码（0=成功）
+```
+
+### 退出码（returncode）
+
+所有命令执行后返回一个数字：`0` = 成功，`非0` = 失败。AI 模型根据退出码判断命令是否成功。
+
+### stdout vs stderr
+
+两种输出流：stdout 是正常结果，stderr 是错误信息。分开捕获方便排查问题。
+
+### 超时（timeout）
+
+防止命令卡死。`subprocess.run(..., timeout=30)` 超过 30 秒自动终止，抛出 `TimeoutExpired` 异常。
+
+### 工作目录（cwd）
+
+命令在哪个目录执行。`subprocess.run(..., cwd="/tmp")` 在 `/tmp` 目录执行命令。
+
+### Shell 检测
+
+Windows 上默认 shell 是 cmd.exe，不认识 Linux 命令（ls, cat, grep）。优先检测 Git Bash，fallback 到 cmd。
+
+```
+检测优先级: Git Bash → cmd.exe (Windows) → /bin/sh (Linux/Mac)
+```
+
+### 输出截断
+
+命令输出可能很长（cat 大文件），截断保留尾部 2000 行，避免撑爆模型上下文。

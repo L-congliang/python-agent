@@ -1,7 +1,6 @@
 """F06 文件读取工具测试"""
 
 import os
-import tempfile
 
 import pytest
 
