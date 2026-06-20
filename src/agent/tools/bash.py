@@ -113,3 +113,69 @@ def validate_bash_input(raw_input: dict, context: ToolUseContext) -> ValidationR
             return ValidationResult.failure("workdir 必须是绝对路径")
 
     return ValidationResult.success()
+
+
+# ============================================================
+# 命令执行
+# ============================================================
+
+
+def execute_bash(input: dict, context: ToolUseContext) -> ToolResult:
+    """执行 bash 命令
+
+    Args:
+        input: {"command": "ls -la", "timeout": 30, "workdir": "/tmp"}
+        context: 工具执行上下文
+
+    Returns:
+        ToolResult: 包含 stdout/stderr 的结果
+    """
+    command = input["command"]
+    timeout = input.get("timeout", 30)
+    workdir = input.get("workdir") or context.cwd
+
+    # 检查中断
+    if context.abort_controller.is_aborted:
+        return ToolResult(output="命令执行被取消", is_error=True)
+
+    # 检测 shell
+    shell_exe, shell_arg = _detect_shell()
+
+    # 确保 workdir 是绝对路径（context.cwd 可能是 "."）
+    if workdir and not os.path.isabs(workdir):
+        workdir = os.path.abspath(workdir)
+
+    try:
+        # 使用 subprocess.run 执行（列表参数，自己控制 shell）
+        result = subprocess.run(
+            [shell_exe, shell_arg, command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=workdir,
+        )
+
+        # 格式化输出
+        output_parts = []
+        if result.stdout:
+            stdout = _truncate_output(result.stdout)
+            output_parts.append(stdout)
+        if result.stderr:
+            output_parts.append(f"\n[stderr]\n{result.stderr}")
+        output_parts.append(f"\n[exit code: {result.returncode}]")
+
+        output = "".join(output_parts)
+        is_error = result.returncode != 0
+
+        return ToolResult(output=output, is_error=is_error)
+
+    except subprocess.TimeoutExpired:
+        return ToolResult(
+            output=f"命令超时（超过 {timeout} 秒）",
+            is_error=True,
+        )
+    except Exception as e:
+        return ToolResult(
+            output=f"命令执行失败: {str(e)}",
+            is_error=True,
+        )

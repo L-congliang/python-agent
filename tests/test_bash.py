@@ -152,3 +152,79 @@ class TestValidateBashInput:
             {"command": "ls", "workdir": "/tmp"}, context
         )
         assert result.is_valid
+
+
+# ============================================================
+# 命令执行测试
+# ============================================================
+
+from agent.tools.bash import execute_bash
+from agent.core.types import ToolResult
+
+
+class TestExecuteBash:
+    """命令执行测试"""
+
+    def test_basic_command(self, context):
+        """执行简单的 echo 命令"""
+        result = execute_bash({"command": "echo hello"}, context)
+        assert "hello" in result.output
+        assert not result.is_error
+        assert "[exit code: 0]" in result.output
+
+    def test_command_failure(self, context):
+        """执行失败的命令（ls 不存在的目录）"""
+        result = execute_bash(
+            {"command": "ls /nonexistent_dir_xyz"}, context
+        )
+        assert result.is_error
+        assert "[exit code:" in result.output
+        assert "[exit code: 0]" not in result.output
+
+    def test_stderr_capture(self, context):
+        """命令输出到 stderr"""
+        result = execute_bash(
+            {"command": "echo error_msg >&2"}, context
+        )
+        assert "[stderr]" in result.output
+        assert "error_msg" in result.output
+
+    def test_timeout(self, context):
+        """命令超时"""
+        result = execute_bash(
+            {"command": "sleep 10", "timeout": 1}, context
+        )
+        assert result.is_error
+        assert "超时" in result.output
+
+    def test_workdir(self, context, tmp_path):
+        """指定工作目录"""
+        result = execute_bash(
+            {"command": "pwd", "workdir": str(tmp_path)}, context
+        )
+        assert not result.is_error
+
+    def test_abort(self, context):
+        """中断命令执行"""
+        context.abort_controller.abort()
+        result = execute_bash({"command": "echo hello"}, context)
+        assert result.is_error
+        assert "取消" in result.output
+
+    def test_special_characters(self, context):
+        """命令包含特殊字符"""
+        result = execute_bash(
+            {"command": "echo 'hello world'"}, context
+        )
+        assert "hello world" in result.output
+        assert not result.is_error
+
+    def test_default_timeout(self, context):
+        """默认 timeout 为 30 秒"""
+        result = execute_bash({"command": "echo ok"}, context)
+        assert not result.is_error
+
+    def test_empty_output(self, context):
+        """命令无输出时只有 exit code"""
+        result = execute_bash({"command": "true"}, context)
+        assert "[exit code: 0]" in result.output
