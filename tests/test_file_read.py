@@ -15,6 +15,7 @@ from agent.tools.file_read import (
     _truncate_lines,
     execute_file_read,
     validate_file_read_input,
+    file_read_tool,
     MAX_LINES,
 )
 
@@ -397,3 +398,41 @@ class TestValidateFileReadInput:
             context,
         )
         assert not result.is_valid
+
+
+class TestFileReadTool:
+    """工具属性测试"""
+
+    def test_tool_name(self):
+        """工具名称为 read"""
+        assert file_read_tool.name == "read"
+
+    def test_tool_description(self):
+        """工具描述包含关键词"""
+        desc = file_read_tool.description
+        assert "读取" in desc or "read" in desc.lower()
+
+    def test_tool_parameters(self):
+        """参数 Schema 正确"""
+        params = file_read_tool.parameters
+        assert "file_path" in params["properties"]
+        assert "offset" in params["properties"]
+        assert "limit" in params["properties"]
+        assert "file_path" in params["required"]
+
+    def test_is_read_only(self):
+        """只读工具"""
+        assert file_read_tool.is_read_only({})
+
+    def test_is_concurrency_safe(self):
+        """可以并行执行"""
+        assert file_read_tool.is_concurrency_safe({})
+
+    def test_summary(self):
+        """摘要包含文件名"""
+        summary = file_read_tool.get_summary({"file_path": "/tmp/main.py"})
+        assert "main.py" in summary
+
+    def test_user_facing_name(self):
+        """用户可见名称"""
+        assert file_read_tool.get_user_facing_name({}) == "Read"

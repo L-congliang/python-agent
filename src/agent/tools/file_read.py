@@ -13,6 +13,7 @@ import chardet
 
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
+from agent.tools.base import build_tool
 
 
 # ============================================================
@@ -180,6 +181,32 @@ def _read_notebook(file_path: str, offset: int, limit: int) -> str:
 
 
 # ============================================================
+# 参数定义
+# ============================================================
+
+FILE_READ_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "file_path": {
+            "type": "string",
+            "description": "要读取的文件路径（绝对路径或相对于 cwd 的路径）",
+        },
+        "offset": {
+            "type": "integer",
+            "description": "起始行号（从 1 开始），默认 1",
+            "default": 1,
+        },
+        "limit": {
+            "type": "integer",
+            "description": "读取的行数，默认 2000",
+            "default": 2000,
+        },
+    },
+    "required": ["file_path"],
+}
+
+
+# ============================================================
 # 文件读取核心逻辑
 # ============================================================
 
@@ -318,3 +345,21 @@ def validate_file_read_input(raw_input: dict, context: ToolUseContext) -> Valida
         return ValidationResult.failure(f"路径是目录，不是文件: {abs_path}")
 
     return ValidationResult.success()
+
+
+# ============================================================
+# 工具注册
+# ============================================================
+
+file_read_tool = build_tool(
+    name="read",
+    description="读取文件内容。支持文本文件和 Jupyter Notebook。可指定行范围（offset/limit）。",
+    parameters=FILE_READ_PARAMETERS,
+    execute_fn=execute_file_read,
+    is_read_only=lambda input: True,
+    is_concurrency_safe=lambda input: True,
+    validate_input=validate_file_read_input,
+    get_summary=lambda input: f"Reading {os.path.basename(input.get('file_path', ''))}",
+    get_user_facing_name=lambda input: "Read",
+    get_activity_description=lambda input: f"Reading {input.get('file_path', '')}",
+)
