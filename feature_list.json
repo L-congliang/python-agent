@@ -45,8 +45,8 @@
       "name": "文件读取工具",
       "file": "tools/file_read.py",
       "spec": "specs/F06-file-read.md",
-      "status": "pending",
-      "description": "读取文件内容"
+      "status": "done",
+      "description": "读取文件内容（文本 + Notebook），支持 offset/limit、行号、编码检测、缓存"
     },
     {
       "id": "F07",

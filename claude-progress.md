@@ -1,5 +1,50 @@
 # 进度日志
 
+## Session 9 — 2026-06-21 F06 文件读取工具
+
+**功能**: F06 文件读取工具（Read）
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 修改 `core/context.py`：FileReadState 支持 mtime 缓存
+2. ✅ 创建 `tools/file_read.py`：完整文件读取工具实现（366 行）
+   - `_resolve_path()` — 路径解析（相对 → 绝对）
+   - `_detect_encoding()` — 编码检测（UTF-8 优先 + chardet）
+   - `_format_with_line_numbers()` — 行号格式化（cat -n 风格）
+   - `_truncate_lines()` — 截断（保留头部 2000 行）
+   - `_read_file_content()` — 文件读取（编码检测 + 解码）
+   - `_read_file_with_cache()` — 带 mtime 缓存的读取
+   - `_read_notebook()` — Jupyter Notebook 解析
+   - `execute_file_read()` — 核心执行逻辑
+   - `validate_file_read_input()` — 输入校验
+   - `file_read_tool` — build_tool() 注册
+3. ✅ 创建 `tests/test_file_read.py`：36 个测试，覆盖所有场景
+4. ✅ 更新 `tools/__init__.py`：导出 file_read_tool
+5. ✅ 更新 `pyproject.toml`：添加 chardet 依赖
+6. ✅ 使用 Superpowers brainstorming + writing-plans + subagent-driven-development 完成全流程
+
+### 关键设计决策
+
+- **文件类型**：文本 + Jupyter Notebook（mimo 不支持多模态，跳过图片）
+- **行范围**：支持 offset/limit，大文件精确读取节省 token
+- **输出格式**：带行号（cat-n 风格），行号对应原始文件行号
+- **截断策略**：保留头部（与 bash 保留尾部不同），2000 行上限
+- **编码检测**：UTF-8 优先 → chardet 自动检测 → latin-1 fallback
+- **缓存**：FileReadState + mtime 检查，防止文件修改后返回旧内容
+- **截断顺序**：先 offset/limit，再截断（修复了 Critical bug）
+
+### 测试覆盖
+
+- 基本读取、行号、offset/limit
+- 文件不存在、路径是目录、中断
+- GBK 编码、缓存命中、缓存过期
+- 大文件截断、大文件 + offset
+- Notebook 读取（基本、输出、offset/limit）
+- 输入校验、工具属性
+
+---
+
 ## Session 8 — 2026-06-20 F05 Bash 工具
 
 **功能**: F05 Bash 工具
