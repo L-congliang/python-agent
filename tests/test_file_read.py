@@ -1,6 +1,7 @@
 """F06 文件读取工具测试"""
 
 import os
+import time
 
 import pytest
 
@@ -236,15 +237,14 @@ class TestExecuteFileRead:
         assert "old content" in result1.output
 
         # 修改文件
-        import time
         time.sleep(0.01)  # 确保 mtime 变化
         file_path.write_text("new content", encoding="utf-8")
 
         result2 = execute_file_read({"file_path": "test.txt"}, context)
         assert "new content" in result2.output
 
-    def test_large_file_truncation(self, tmp_path):
-        """超过 2000 行时截断，保留头部"""
+    def test_large_file_default_limit(self, tmp_path):
+        """大文件默认 limit=2000，通过 offset/limit 截取前 2000 行"""
         file_path = tmp_path / "large.txt"
         content = "\n".join(f"line {i}" for i in range(3000))
         file_path.write_text(content, encoding="utf-8")
@@ -252,10 +252,32 @@ class TestExecuteFileRead:
         context = _make_context(str(tmp_path))
         result = execute_file_read({"file_path": "large.txt"}, context)
 
-        assert "truncated" in result.output
-        assert "line 0" in result.output       # 头部保留
-        assert "line 1999" in result.output     # 头部保留
-        assert "line 2000" not in result.output # 尾部截断
+        assert not result.is_error
+        assert "truncated" not in result.output  # limit 先生效，不需要截断
+        assert "line 0" in result.output         # 头部保留
+        assert "line 1999" in result.output       # 前 2000 行
+        assert "line 2000" not in result.output   # 超出 limit 范围
+
+    def test_large_file_with_offset(self, tmp_path):
+        """大文件指定 offset 读取中间部分，验证 offset/limit 在截断前生效"""
+        file_path = tmp_path / "large.txt"
+        content = "\n".join(f"line {i}" for i in range(3000))
+        file_path.write_text(content, encoding="utf-8")
+
+        context = _make_context(str(tmp_path))
+        # 从第 1500 行开始读 10 行，应该拿到 line 1499 到 line 1508
+        result = execute_file_read(
+            {"file_path": "large.txt", "offset": 1500, "limit": 10},
+            context,
+        )
+
+        assert not result.is_error
+        assert "1500 │ line 1499" in result.output
+        assert "1509 │ line 1508" in result.output
+        # 不应该包含第 1 行或超出范围的行
+        assert "line 0" not in result.output
+        assert "line 1999" not in result.output
+        assert "truncated" not in result.output  # 10 行不会触发截断
 
 
 class TestValidateFileReadInput:

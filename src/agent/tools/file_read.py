@@ -175,7 +175,9 @@ def execute_file_read(input: dict, context: ToolUseContext) -> ToolResult:
     Returns:
         ToolResult: 带行号的文件内容
     """
-    file_path = input["file_path"]
+    file_path = input.get("file_path")
+    if not file_path or not isinstance(file_path, str) or not file_path.strip():
+        return ToolResult(output="file_path 不能为空", is_error=True)
     offset = input.get("offset", 1)
     limit = input.get("limit", MAX_LINES)
 
@@ -198,22 +200,17 @@ def execute_file_read(input: dict, context: ToolUseContext) -> ToolResult:
         # 带缓存读取
         content = _read_file_with_cache(abs_path, context)
 
-        # 先截断过长内容（保留头部，对齐 Claude Code 行为）
-        truncated_content = _truncate_lines(content)
-        was_truncated = truncated_content is not content
-
-        # 应用 offset/limit
-        lines = truncated_content.split("\n")
+        # 先应用 offset/limit 到原始内容，再截断（避免截断破坏行号对应关系）
+        lines = content.split("\n")
         start = offset - 1  # offset 从 1 开始，转为 0-based index
-        # 如果内容被截断，_truncate_lines 会在头部插入一行截断提示，
-        # 需要多取一行以确保 offset/limit 覆盖到正确的行数
-        effective_limit = limit + 1 if was_truncated else limit
-        end = start + effective_limit
-        selected_lines = lines[start:end]
-        selected_content = "\n".join(selected_lines)
+        end = start + limit
+        selected_content = "\n".join(lines[start:end])
+
+        # 截断选中内容（如果超过 MAX_LINES）
+        truncated = _truncate_lines(selected_content)
 
         # 添加行号
-        result = _format_with_line_numbers(selected_content, start_line=offset)
+        result = _format_with_line_numbers(truncated, start_line=offset)
 
         return ToolResult(output=result, is_error=False)
 
