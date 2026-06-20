@@ -9,6 +9,7 @@ from agent.tools.bash import (
     _truncate_output,
     MAX_OUTPUT_LINES,
     validate_bash_input,
+    bash_tool,
 )
 
 
@@ -228,3 +229,71 @@ class TestExecuteBash:
         """命令无输出时只有 exit code"""
         result = execute_bash({"command": "true"}, context)
         assert "[exit code: 0]" in result.output
+
+
+# ============================================================
+# bash_tool 工具属性测试
+# ============================================================
+
+
+class TestBashTool:
+    """BashTool 工具属性测试"""
+
+    def test_tool_name(self):
+        """工具名称为 bash"""
+        assert bash_tool.name == "bash"
+
+    def test_tool_description(self):
+        """工具描述包含关键词"""
+        desc = bash_tool.description
+        assert "shell" in desc.lower() or "命令" in desc
+
+    def test_tool_parameters_schema(self):
+        """参数 Schema 包含 command/timeout/workdir"""
+        props = bash_tool.parameters["properties"]
+        assert "command" in props
+        assert "timeout" in props
+        assert "workdir" in props
+        assert bash_tool.parameters["required"] == ["command"]
+
+    def test_is_not_read_only(self):
+        """bash 不是只读工具"""
+        assert not bash_tool.is_read_only({})
+
+    def test_is_not_concurrency_safe(self):
+        """bash 不支持并发"""
+        assert not bash_tool.is_concurrency_safe({})
+
+    def test_get_summary(self):
+        """摘要包含命令内容"""
+        summary = bash_tool.get_summary({"command": "ls -la"})
+        assert "ls -la" in summary
+
+    def test_get_summary_long_command(self):
+        """长命令摘要被截断"""
+        long_cmd = "a" * 100
+        summary = bash_tool.get_summary({"command": long_cmd})
+        assert len(summary) <= 60  # "Running: " + 50 chars
+
+    def test_get_user_facing_name(self):
+        """用户可见名称为 Bash"""
+        assert bash_tool.get_user_facing_name({}) == "Bash"
+
+    def test_get_activity_description(self):
+        """活动描述包含命令"""
+        desc = bash_tool.get_activity_description({"command": "pytest"})
+        assert "pytest" in desc
+
+    def test_validate_input_delegates(self):
+        """validate_input 正确委托"""
+        # 空命令应该失败
+        result = bash_tool.validate_input(
+            {"command": ""}, ToolUseContext(model="test")
+        )
+        assert not result.is_valid
+
+    def test_execute_delegates(self, context):
+        """execute 正确委托"""
+        result = bash_tool.execute({"command": "echo test"}, context)
+        assert "test" in result.output
+        assert not result.is_error

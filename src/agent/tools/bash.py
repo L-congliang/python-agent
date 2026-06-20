@@ -179,3 +179,41 @@ def execute_bash(input: dict, context: ToolUseContext) -> ToolResult:
             output=f"命令执行失败: {str(e)}",
             is_error=True,
         )
+
+
+# ============================================================
+# 工具注册
+# ============================================================
+
+BASH_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "command": {
+            "type": "string",
+            "description": "要执行的 shell 命令",
+        },
+        "timeout": {
+            "type": "number",
+            "description": "超时时间（秒），默认 30",
+            "default": 30,
+        },
+        "workdir": {
+            "type": "string",
+            "description": "工作目录（绝对路径），默认使用 context.cwd",
+        },
+    },
+    "required": ["command"],
+}
+
+bash_tool = build_tool(
+    name="bash",
+    description="执行 shell 命令。用于运行脚本、测试、构建、Git 操作等。",
+    parameters=BASH_PARAMETERS,
+    execute_fn=execute_bash,
+    is_read_only=lambda input: False,
+    is_concurrency_safe=lambda input: False,
+    validate_input=validate_bash_input,
+    get_summary=lambda input: f"Running: {input.get('command', '')[:50]}",
+    get_user_facing_name=lambda input: "Bash",
+    get_activity_description=lambda input: f"Running {input.get('command', '')[:30]}",
+)
