@@ -10,7 +10,6 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Any
 
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult

@@ -3,10 +3,12 @@
 import pytest
 
 from agent.core.context import ToolUseContext
+from agent.core.types import ToolResult
 from agent.tools.bash import (
     _detect_shell,
     _shell_cache,
     _truncate_output,
+    execute_bash,
     MAX_OUTPUT_LINES,
     validate_bash_input,
     bash_tool,
@@ -34,7 +36,6 @@ class TestDetectShell:
         result1 = _detect_shell()
         result2 = _detect_shell()
         assert result1 is result2
-
 
 
 class TestTruncateOutput:
@@ -158,10 +159,6 @@ class TestValidateBashInput:
 # ============================================================
 # 命令执行测试
 # ============================================================
-
-from agent.tools.bash import execute_bash
-from agent.core.types import ToolResult
-
 
 class TestExecuteBash:
     """命令执行测试"""
