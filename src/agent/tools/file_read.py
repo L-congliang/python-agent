@@ -7,7 +7,11 @@
 from __future__ import annotations
 
 import os
+
 import chardet
+
+from agent.core.context import ToolUseContext
+from agent.core.types import ToolResult, ValidationResult
 
 
 # ============================================================
@@ -117,3 +121,142 @@ def _truncate_lines(content: str, max_lines: int = MAX_LINES) -> str:
     total = len(lines)
     header = f"... (truncated, showing first {max_lines} of {total} lines)\n"
     return header + "\n".join(truncated)
+
+
+# ============================================================
+# 文件读取核心逻辑
+# ============================================================
+
+
+def _read_file_content(file_path: str) -> str:
+    """读取文件原始内容（检测编码后解码）
+
+    Args:
+        file_path: 文件绝对路径
+
+    Returns:
+        文件内容字符串
+    """
+    encoding = _detect_encoding(file_path)
+    with open(file_path, encoding=encoding) as f:
+        return f.read()
+
+
+def _read_file_with_cache(file_path: str, context: ToolUseContext) -> str:
+    """读取文件，带 FileReadState 缓存 + mtime 检查
+
+    Args:
+        file_path: 文件绝对路径
+        context: 工具执行上下文
+
+    Returns:
+        文件内容字符串
+    """
+    current_mtime = os.path.getmtime(file_path)
+    cached = context.file_read_state.get(file_path)
+
+    if cached is not None:
+        cached_content, cached_mtime = cached
+        if cached_mtime == current_mtime:
+            return cached_content
+
+    content = _read_file_content(file_path)
+    context.file_read_state.set(file_path, content, current_mtime)
+    return content
+
+
+def execute_file_read(input: dict, context: ToolUseContext) -> ToolResult:
+    """读取文件内容
+
+    Args:
+        input: {"file_path": "src/main.py", "offset": 1, "limit": 2000}
+        context: 工具执行上下文
+
+    Returns:
+        ToolResult: 带行号的文件内容
+    """
+    file_path = input["file_path"]
+    offset = input.get("offset", 1)
+    limit = input.get("limit", MAX_LINES)
+
+    # 检查中断
+    if context.abort_controller.is_aborted:
+        return ToolResult(output="文件读取被取消", is_error=True)
+
+    # 解析路径
+    abs_path = _resolve_path(file_path, context.cwd)
+
+    # 检查文件存在性
+    if not os.path.exists(abs_path):
+        return ToolResult(output=f"文件不存在: {abs_path}", is_error=True)
+
+    # 检查是否是目录
+    if os.path.isdir(abs_path):
+        return ToolResult(output=f"路径是目录，不是文件: {abs_path}", is_error=True)
+
+    try:
+        # 带缓存读取
+        content = _read_file_with_cache(abs_path, context)
+
+        # 先截断过长内容（保留头部，对齐 Claude Code 行为）
+        truncated_content = _truncate_lines(content)
+        was_truncated = truncated_content is not content
+
+        # 应用 offset/limit
+        lines = truncated_content.split("\n")
+        start = offset - 1  # offset 从 1 开始，转为 0-based index
+        # 如果内容被截断，_truncate_lines 会在头部插入一行截断提示，
+        # 需要多取一行以确保 offset/limit 覆盖到正确的行数
+        effective_limit = limit + 1 if was_truncated else limit
+        end = start + effective_limit
+        selected_lines = lines[start:end]
+        selected_content = "\n".join(selected_lines)
+
+        # 添加行号
+        result = _format_with_line_numbers(selected_content, start_line=offset)
+
+        return ToolResult(output=result, is_error=False)
+
+    except UnicodeDecodeError:
+        return ToolResult(
+            output=f"无法解码文件（编码不支持）: {abs_path}",
+            is_error=True,
+        )
+    except Exception as e:
+        return ToolResult(
+            output=f"文件读取失败: {str(e)}",
+            is_error=True,
+        )
+
+
+def validate_file_read_input(raw_input: dict, context: ToolUseContext) -> ValidationResult:
+    """校验文件读取输入
+
+    Args:
+        raw_input: 工具输入
+        context: 工具执行上下文
+
+    Returns:
+        ValidationResult
+    """
+    file_path = raw_input.get("file_path")
+    if not file_path or not isinstance(file_path, str) or not file_path.strip():
+        return ValidationResult.failure("file_path 不能为空")
+
+    offset = raw_input.get("offset", 1)
+    if not isinstance(offset, int) or offset < 1:
+        return ValidationResult.failure("offset 必须是正整数")
+
+    limit = raw_input.get("limit", MAX_LINES)
+    if not isinstance(limit, int) or limit < 1:
+        return ValidationResult.failure("limit 必须是正整数")
+
+    # 检查文件存在性
+    abs_path = _resolve_path(file_path, context.cwd)
+    if not os.path.exists(abs_path):
+        return ValidationResult.failure(f"文件不存在: {abs_path}")
+
+    if os.path.isdir(abs_path):
+        return ValidationResult.failure(f"路径是目录，不是文件: {abs_path}")
+
+    return ValidationResult.success()
