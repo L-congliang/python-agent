@@ -13,7 +13,7 @@
       "name": "CLI 框架 - 终端 UI",
       "file": "cli/app.py",
       "spec": "specs/F02-cli.md",
-      "status": "pending",
+      "status": "done",
       "description": "rich + prompt_toolkit，Markdown 渲染、流式输出、工具面板"
     },
     {
@@ -37,7 +37,7 @@
       "name": "Bash 工具",
       "file": "tools/bash.py",
       "spec": "specs/F05-bash-tool.md",
-      "status": "pending",
+      "status": "done",
       "description": "执行 shell 命令"
     },
     {

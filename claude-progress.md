@@ -1,5 +1,76 @@
 # 进度日志
 
+## Session 8 — 2026-06-20 F05 Bash 工具
+
+**功能**: F05 Bash 工具
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `tools/bash.py`：BashTool 实现（execute_bash, validate_bash_input, _detect_shell, _truncate_output）
+2. ✅ 创建 `tests/test_bash.py`：12 个测试，覆盖所有场景
+3. ✅ 更新 `tools/registry.py`：注册 bash_tool 到全局 registry
+4. ✅ 更新 `core/context.py`：ToolUseContext 新增 workdir 和 timeout 字段
+5. ✅ 更新 feature_list.json（F05 → done）
+
+### 关键设计决策
+
+- **Shell 自动检测**：优先 Git Bash (Windows) → cmd → /bin/sh (Unix)，通过 `shutil.which()` 检测
+- **输出截断**：保留最后 2000 行，避免巨大输出撑爆内存
+- **超时保护**：默认 30 秒，可通过参数自定义（最大 600 秒）
+- **输入校验**：command 必填，timeout/workdir 类型检查，workdir 路径存在性校验
+- **工具属性**：name="bash", is_read_only=False, is_concurrency_safe=False（安全默认值）
+
+### 测试覆盖
+
+- 输入校验（空 command、无效类型、超时范围、workdir 不存在）
+- Shell 检测（Git Bash → cmd → /bin/sh 降级链）
+- 输出截断（正常、超长、刚好边界）
+- 工具属性和 summary
+- 并发安全性和只读性
+
+---
+
+## Session 7 — 2026-06-18 F02 CLI 框架
+
+**功能**: F02 CLI 框架 - 终端 UI
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 扩展 `core/types.py`：StreamEvent 新增 tool_name/tool_input/is_error 字段
+2. ✅ 创建 `cli/__init__.py`：导出 AgentApp
+3. ✅ 创建 `cli/app.py`：AgentApp 类实现
+   - 欢迎界面（Cool Code 品牌）
+   - 命令系统（/help, /exit, /quit, /clear, /reset）
+   - 流式渲染（缓冲策略：chunk 攒着，遇换行渲染，flush 渲染剩余）
+   - 工具面板（调用时显示名称+参数，完成后显示状态）
+   - 长输出截断（超过 50 行折叠）
+   - 错误渲染（红色高亮）
+4. ✅ 创建 `tests/test_cli.py`：37 个测试，全部通过
+5. ✅ 更新 feature_list.json（F02 → done）
+
+### 关键设计决策
+
+- **事件驱动回调**：on_message 返回 Iterator[StreamEvent]，AgentApp 根据事件类型分发渲染
+- **流式缓冲策略**：chunk 先攒到缓冲区，遇到换行渲染上一段，flush 时渲染剩余。避免 Markdown 解析不完整
+- **长输出截断**：超过 50 行时截断，显示 "... (N more lines)"
+- **rich 替代 print**：开箱即用的 Markdown 渲染、语法高亮、面板、表格
+
+### 测试覆盖
+
+- 初始化（默认、自定义回调）
+- 命令处理（/exit, /quit, /help, /clear, /reset, 未知命令）
+- Markdown 渲染（标题、代码块、粗体）
+- 流式缓冲（chunk 缓冲、多行 chunk、flush、空缓冲区）
+- 工具面板（调用显示、多参数、结果截断）
+- 错误渲染
+- 事件分发（text/tool_call/tool_result/unknown）
+- 主循环（退出、Ctrl+D、Ctrl+C、空输入、回调调用、回调异常）
+- 欢迎和退出信息
+
+---
+
 ## Session 5 — 2026-06-18 家（当前）
 
 ### 完成
@@ -35,9 +106,9 @@
 
 ### 当前状态
 - F01 status: done
-- F02 status: pending（CLI 框架，可后续做）
+- F02 status: **done** ✓
 - F03 status: **done** ✓
-- F04 status: pending（spec 已写，依赖 F03 已完成）
+- F04 status: **done** ✓
 - F05-F10 status: pending
 
 ### 下次从这里开始
