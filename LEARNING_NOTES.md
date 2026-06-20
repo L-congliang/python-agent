@@ -44,6 +44,15 @@
     - [Shell 检测](#shell-检测)
     - [输出截断](#输出截断)
 
+### F06 文件读取工具
+18. [F06 文件读取工具核心概念](#f06-文件读取工具核心概念)
+    - [文件编码与 chardet](#文件编码与-chardet)
+    - [mtime（修改时间）](#mtime修改时间)
+    - [文件缓存策略](#文件缓存策略)
+    - [行号与 offset/limit](#行号与-offsetlimit)
+    - [截断方向：头部 vs 尾部](#截断方向头部-vs-尾部)
+    - [Jupyter Notebook 格式](#jupyter-notebook-格式)
+
 ---
 
 ## 1. httpx vs Anthropic SDK
@@ -673,3 +682,166 @@ Windows 上默认 shell 是 cmd.exe，不认识 Linux 命令（ls, cat, grep）�
 ### 输出截断
 
 命令输出可能很长（cat 大文件），截断保留尾部 2000 行，避免撑爆模型上下文。
+
+---
+
+## F06 文件读取工具核心概念
+
+### 文件编码与 chardet
+
+**问题**：文件存储的是字节（bytes），显示成文字需要"解码"。不同文件用不同编码。
+
+```python
+# 文件实际存储的是字节
+b'\xe4\xbd\xa0\xe5\xa5\xbd'  # 这是什么？
+
+# 用 UTF-8 解码 → "你好"
+# 用 GBK 解码   → "浣犲"（乱码）
+```
+
+**常见编码**：
+
+| 编码 | 用途 | 特点 |
+|------|------|------|
+| UTF-8 | 现代标准，90%+ 文件 | 可变长度，支持所有语言 |
+| GBK | Windows 中文老项目 | 固定 2 字节，只支持中英文 |
+| Latin-1 | 万能 fallback | 永远不报错，但可能乱码 |
+
+**chardet 库**：自动检测文件编码。
+
+```python
+import chardet
+
+raw = b'\xc4\xe3\xba\xc3'  # GBK 编码的"你好"
+result = chardet.detect(raw)
+# {'encoding': 'GB2312', 'confidence': 0.99}
+```
+
+**为什么需要 chardet？** 因为 `open(file)` 默认用 UTF-8，遇到 GBK 文件会报 `UnicodeDecodeError`。chardet 先检测编码，再用正确的编码打开。
+
+**我们的策略**：UTF-8 优先 → chardet 检测 → latin-1 兜底。三层层层递进，确保不报错。
+
+### mtime（修改时间）
+
+文件系统记录的"最后修改时间"，是一个 Unix 时间戳（秒）。
+
+```python
+import os
+mtime = os.path.getmtime("main.py")
+# 1718956800.0（2024-06-21 10:00:00 的 Unix 时间戳）
+```
+
+**用途**：判断文件是否被修改过。如果 mtime 没变，文件内容一定没变（假设没有人在同一秒内改了又改回来）。
+
+**为什么不用文件内容 hash？** 因为读取整个文件算 hash 太慢。`os.path.getmtime()` 只需要读文件元数据，耗时 0.001ms。
+
+### 文件缓存策略
+
+**问题**：一次对话中，Agent 可能多次读同一个文件。每次都读磁盘浪费 I/O。
+
+**解决方案**：缓存文件内容 + mtime。
+
+```
+第 1 次读 main.py:
+  → 缓存没有 → 读磁盘 → 存缓存 (内容, mtime=1000)
+
+第 2 次读 main.py:
+  → 缓存有 → 比较 mtime: 缓存 1000 vs 磁盘 1000
+  → 相同 → 直接返回缓存（跳过磁盘读取）
+
+用户用 Bash 修改了 main.py → mtime 变成 1001
+
+第 3 次读 main.py:
+  → 缓存有 → 比较 mtime: 缓存 1000 vs 磁盘 1001
+  → 不同 → 重新读磁盘 → 更新缓存
+```
+
+**关键**：缓存存的是 `(内容, mtime)` 元组，不只是内容。没有 mtime 就无法检测过期。
+
+### 行号与 offset/limit
+
+**为什么输出要带行号？**
+
+```
+# 没有行号
+def calculate(x, y):
+    return x + y
+```
+模型只能说"在 `def calculate` 下面那一行"——不精确。
+
+```
+# 有行号
+  7 │ def calculate(x, y):
+  8 │     return x + y
+```
+模型可以直接说"第 8 行"——精确无歧义。
+
+**offset/limit 的好处**：
+
+大文件（500 行）不需要全部读取。模型可以：
+1. 先读前 50 行（`offset=1, limit=50`）→ 了解文件结构
+2. 再读第 100-150 行（`offset=100, limit=50`）→ 看感兴趣的函数
+3. 总共只读 100 行，而不是 500 行
+
+**行号对应原始文件行号**：`offset=100` 时，输出第一行显示 `100 │`，不是 `1 │`。
+
+### 截断方向：头部 vs 尾部
+
+不同工具保留不同方向：
+
+| 工具 | 保留方向 | 原因 |
+|------|---------|------|
+| Bash | 尾部 | 命令输出有用信息在最后（测试结果、错误信息） |
+| Read | 头部 | 文件结构在开头（imports、类定义、函数签名） |
+
+```
+Bash 截断（保留尾部）：
+  ... (truncated 1000 lines)
+  line 2001  ← 最后的输出
+  line 2002
+  ...
+  line 3000  ← 有用信息在这里
+
+Read 截断（保留头部）：
+  ... (truncated, showing first 2000 of 5000 lines)
+  line 1     ← imports 在这里
+  line 2
+  ...
+  line 2000  ← 类定义、函数签名在头部
+```
+
+### Jupyter Notebook 格式
+
+Notebook（.ipynb）本质是一个 JSON 文件：
+
+```json
+{
+    "cells": [
+        {
+            "cell_type": "markdown",
+            "source": ["# 标题\n", "描述"]
+        },
+        {
+            "cell_type": "code",
+            "source": ["print('hello')"],
+            "outputs": [{"text": ["hello\n"], "output_type": "stream"}]
+        }
+    ]
+}
+```
+
+**Read 工具的格式化输出**：
+
+```
+--- Cell 1 (markdown) ---
+# 标题
+描述
+
+--- Cell 2 (code) ---
+print('hello')
+
+--- Cell 2 Output ---
+hello
+```
+
+分隔线清晰区分不同 cell，比纯 JSON 更易读。offset/limit 按格式化后的行计算，与文本文件行为一致。
