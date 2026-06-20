@@ -52,6 +52,7 @@
     - [行号与 offset/limit](#行号与-offsetlimit)
     - [截断方向：头部 vs 尾部](#截断方向头部-vs-尾部)
     - [Jupyter Notebook 格式](#jupyter-notebook-格式)
+    - [Q&A 回顾](#qa-回顾设计时问过的问题)
 
 ---
 
@@ -845,3 +846,78 @@ hello
 ```
 
 分隔线清晰区分不同 cell，比纯 JSON 更易读。offset/limit 按格式化后的行计算，与文本文件行为一致。
+
+### Q&A 回顾：设计时问过的问题
+
+**Q1: offset/limit 是什么意思？**
+
+就是"从第几行开始读，读几行"。类比翻书：offset 是"翻到第几页"，limit 是"读几页"。
+
+```
+Read(file_path="main.py")              → 读整个文件（截断到 2000 行）
+Read(file_path="main.py", offset=100, limit=50)  → 只读第 100-149 行
+```
+
+**Q2: 了解了前 50 行后，还是要全部读取吗？**
+
+不是。模型像人一样"先看目录，再翻到具体页"：
+
+```
+第 1 步: Read(file_path="main.py", offset=1, limit=50)
+         → 看到文件结构，发现 calculate 函数在第 100 行附近
+
+第 2 步: Read(file_path="main.py", offset=95, limit=55)
+         → 精确拿到 calculate 函数的实现
+
+总共只读了 105 行，而不是全部 500 行
+```
+
+好处是**节省 token**。模型上下文窗口有限，塞太多内容会溢出。
+
+**Q3: chardet 是什么？**
+
+一个 Python 库，自动检测文件是什么编码。
+
+```python
+import chardet
+
+# 读取一个文件的前几 KB 字节
+with open("old_file.txt", "rb") as f:
+    raw = f.read(8192)
+
+# chardet 分析字节模式，猜测编码
+result = chardet.detect(raw)
+# {'encoding': 'GB2312', 'confidence': 0.99, 'language': 'Chinese'}
+
+# 用检测到的编码解码
+text = raw.decode(result['encoding'])
+```
+
+**为什么需要？** 中文项目经常遇到 GBK 编码（Windows 默认），直接 `open(file)` 用 UTF-8 会报错。chardet 先检测再解码，不会出错。
+
+**Q4: mtime 检查是怎么做的？**
+
+每次读文件前，先获取文件的"最后修改时间"，和缓存里的时间比较：
+
+```python
+import os
+
+# 获取文件修改时间（Unix 时间戳，秒）
+current_mtime = os.path.getmtime("main.py")
+# 1718956800.0
+
+# 和缓存比较
+if cached_mtime == current_mtime:
+    # 文件没变，用缓存（跳过磁盘读取）
+    return cached_content
+else:
+    # 文件被修改了，重新读取
+    content = read_file("main.py")
+    update_cache(content, current_mtime)
+```
+
+`os.path.getmtime()` 只读文件元数据，耗时约 0.001ms，几乎无开销。
+
+**Q5: 图片支持为什么去掉了？**
+
+因为 mimo v2.5 pro 大概率不支持多模态（图片理解）。即使 Read 工具返回 base64 图片，模型也看不懂。所以跳过图片，只做文本 + Notebook。
