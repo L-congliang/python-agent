@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 import chardet
@@ -123,6 +124,58 @@ def _truncate_lines(content: str, max_lines: int = MAX_LINES) -> str:
     return header + "\n".join(truncated)
 
 
+def _read_notebook(file_path: str, offset: int, limit: int) -> str:
+    """读取 Jupyter Notebook 并格式化为可读文本
+
+    Args:
+        file_path: Notebook 文件路径
+        offset: 起始行号
+        limit: 读取行数
+
+    Returns:
+        格式化后的内容（已应用行号和截断）
+    """
+    with open(file_path, encoding="utf-8") as f:
+        notebook = json.load(f)
+
+    cells = notebook.get("cells", [])
+    output_lines = []
+
+    for i, cell in enumerate(cells):
+        cell_type = cell.get("cell_type", "unknown")
+        source = "".join(cell.get("source", []))
+
+        # 添加 cell 分隔线
+        output_lines.append(f"--- Cell {i + 1} ({cell_type}) ---")
+
+        # 添加 cell 内容
+        if source:
+            output_lines.append(source.rstrip())
+
+        # code cell 的输出
+        if cell_type == "code":
+            for output in cell.get("outputs", []):
+                text_parts = output.get("text", [])
+                if text_parts:
+                    text = "".join(text_parts).rstrip()
+                    if text:
+                        output_lines.append(f"--- Cell {i + 1} Output ---")
+                        output_lines.append(text)
+
+        output_lines.append("")  # cell 之间空行
+
+    content = "\n".join(output_lines)
+
+    # 应用 offset/limit
+    lines = content.split("\n")
+    start = offset - 1
+    end = start + limit
+    selected_lines = lines[start:end]
+    selected_content = "\n".join(selected_lines)
+
+    return _format_with_line_numbers(selected_content, start_line=offset)
+
+
 # ============================================================
 # 文件读取核心逻辑
 # ============================================================
@@ -197,7 +250,12 @@ def execute_file_read(input: dict, context: ToolUseContext) -> ToolResult:
         return ToolResult(output=f"路径是目录，不是文件: {abs_path}", is_error=True)
 
     try:
-        # 带缓存读取
+        # 检查是否是 Notebook
+        if abs_path.endswith(".ipynb"):
+            result = _read_notebook(abs_path, offset, limit)
+            return ToolResult(output=result, is_error=False)
+
+        # 带缓存读取（文本文件）
         content = _read_file_with_cache(abs_path, context)
 
         # 先应用 offset/limit 到原始内容，再截断（避免截断破坏行号对应关系）

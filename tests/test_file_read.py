@@ -1,5 +1,6 @@
 """F06 文件读取工具测试"""
 
+import json
 import os
 import time
 
@@ -278,6 +279,76 @@ class TestExecuteFileRead:
         assert "line 0" not in result.output
         assert "line 1999" not in result.output
         assert "truncated" not in result.output  # 10 行不会触发截断
+
+
+class TestReadNotebook:
+    """Notebook 读取测试"""
+
+    def test_basic_notebook(self, tmp_path):
+        """读取基本 Notebook"""
+        notebook = {
+            "cells": [
+                {"cell_type": "markdown", "source": ["# Title\n", "Description"]},
+                {"cell_type": "code", "source": ["print('hello')"], "outputs": []},
+            ]
+        }
+        file_path = tmp_path / "test.ipynb"
+        file_path.write_text(json.dumps(notebook), encoding="utf-8")
+
+        context = _make_context(str(tmp_path))
+        result = execute_file_read({"file_path": "test.ipynb"}, context)
+
+        assert not result.is_error
+        assert "Cell 1" in result.output
+        assert "markdown" in result.output
+        assert "# Title" in result.output
+        assert "Cell 2" in result.output
+        assert "code" in result.output
+        assert "print('hello')" in result.output
+
+    def test_notebook_with_output(self, tmp_path):
+        """Notebook code cell 有输出"""
+        notebook = {
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": ["print('hello')"],
+                    "outputs": [
+                        {"text": ["hello\n"], "output_type": "stream"}
+                    ],
+                },
+            ]
+        }
+        file_path = tmp_path / "test.ipynb"
+        file_path.write_text(json.dumps(notebook), encoding="utf-8")
+
+        context = _make_context(str(tmp_path))
+        result = execute_file_read({"file_path": "test.ipynb"}, context)
+
+        assert not result.is_error
+        assert "Output" in result.output
+        assert "hello" in result.output
+
+    def test_notebook_offset_limit(self, tmp_path):
+        """Notebook 支持 offset/limit"""
+        notebook = {
+            "cells": [
+                {"cell_type": "markdown", "source": ["# Cell 1"]},
+                {"cell_type": "code", "source": ["# Cell 2"], "outputs": []},
+                {"cell_type": "code", "source": ["# Cell 3"], "outputs": []},
+            ]
+        }
+        file_path = tmp_path / "test.ipynb"
+        file_path.write_text(json.dumps(notebook), encoding="utf-8")
+
+        context = _make_context(str(tmp_path))
+        result = execute_file_read(
+            {"file_path": "test.ipynb", "offset": 1, "limit": 5},
+            context,
+        )
+
+        assert not result.is_error
+        # 只应该包含 Cell 1 的内容（前5行）
 
 
 class TestValidateFileReadInput:
