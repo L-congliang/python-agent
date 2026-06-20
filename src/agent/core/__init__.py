@@ -14,7 +14,10 @@ from .types import (
 )
 from .context import ToolUseContext, AbortController, FileReadState
 from .model import MimoClient, ModelConfig, load_config, StreamResult
-from .loop import LoopConfig, AgentLoop
+
+# 注意: LoopConfig 和 AgentLoop 不在这里导入，
+# 因为 agent.core.loop → agent.tools.registry → agent.tools.base → agent.core.types
+# 会形成循环导入。使用者应直接 from agent.core.loop import ...
 
 __all__ = [
     # types
@@ -36,7 +39,4 @@ __all__ = [
     "ModelConfig",
     "load_config",
     "StreamResult",
-    # loop
-    "LoopConfig",
-    "AgentLoop",
 ]
