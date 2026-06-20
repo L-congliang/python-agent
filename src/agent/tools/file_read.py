@@ -135,8 +135,11 @@ def _read_notebook(file_path: str, offset: int, limit: int) -> str:
     Returns:
         格式化后的内容（已应用行号和截断）
     """
-    with open(file_path, encoding="utf-8") as f:
-        notebook = json.load(f)
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            notebook = json.load(f)
+    except json.JSONDecodeError as e:
+        return f"无效的 Notebook 格式（JSON 解析失败）: {file_path}\n{e}"
 
     cells = notebook.get("cells", [])
     output_lines = []

@@ -343,12 +343,14 @@ class TestReadNotebook:
 
         context = _make_context(str(tmp_path))
         result = execute_file_read(
-            {"file_path": "test.ipynb", "offset": 1, "limit": 5},
+            {"file_path": "test.ipynb", "offset": 1, "limit": 3},
             context,
         )
 
         assert not result.is_error
-        # 只应该包含 Cell 1 的内容（前5行）
+        assert "Cell 1" in result.output
+        assert "Cell 2" not in result.output  # beyond limit
+        assert "Cell 3" not in result.output  # beyond limit
 
 
 class TestValidateFileReadInput:
