@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 import chardet
 
@@ -248,7 +249,7 @@ def _read_file_with_cache(file_path: str, context: ToolUseContext) -> str:
     return content
 
 
-def execute_file_read(input: dict, context: ToolUseContext) -> ToolResult:
+def execute_file_read(input: dict[str, Any], context: ToolUseContext) -> ToolResult:
     """读取文件内容
 
     Args:
@@ -314,7 +315,7 @@ def execute_file_read(input: dict, context: ToolUseContext) -> ToolResult:
         )
 
 
-def validate_file_read_input(raw_input: dict, context: ToolUseContext) -> ValidationResult:
+def validate_file_read_input(raw_input: dict[str, Any], context: ToolUseContext) -> ValidationResult:
     """校验文件读取输入
 
     Args:
