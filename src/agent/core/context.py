@@ -56,22 +56,25 @@ class FileReadState:
     在一次对话中，同一个文件可能被多个工具读取，
     缓存可以避免重复的磁盘 I/O。
 
+    使用 mtime 追踪文件修改时间，调用方可通过比较 mtime
+    判断缓存是否过期（文件是否被外部修改过）。
+
     使用方式:
         state = FileReadState()
-        content = state.get("src/main.py")  # None（首次）
-        state.set("src/main.py", "print('hello')")
-        content = state.get("src/main.py")  # "print('hello')"（缓存命中）
+        result = state.get("src/main.py")  # None（首次）
+        state.set("src/main.py", "print('hello')", 1718956800.0)
+        result = state.get("src/main.py")  # ("print('hello')", 1718956800.0)
     """
 
-    _cache: dict[str, str] = field(default_factory=dict)
+    _cache: dict[str, tuple[str, float]] = field(default_factory=dict)
 
-    def get(self, path: str) -> str | None:
-        """获取缓存的文件内容，未缓存返回 None"""
+    def get(self, path: str) -> tuple[str, float] | None:
+        """获取缓存的 (内容, mtime)，未缓存返回 None"""
         return self._cache.get(path)
 
-    def set(self, path: str, content: str) -> None:
-        """设置文件内容缓存"""
-        self._cache[path] = content
+    def set(self, path: str, content: str, mtime: float) -> None:
+        """设置文件内容缓存（内容 + mtime）"""
+        self._cache[path] = (content, mtime)
 
     def has(self, path: str) -> bool:
         """检查路径是否已缓存"""

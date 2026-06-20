@@ -168,19 +168,23 @@ class TestFileReadState:
         assert state.has("any_path") is False
 
     def test_set_and_get(self):
-        """set 后 get 能取到值"""
+        """set 后 get 能取到值（内容 + mtime）"""
         state = FileReadState()
-        state.set("src/main.py", "print('hello')")
-        assert state.get("src/main.py") == "print('hello')"
+        state.set("src/main.py", "print('hello')", 1718956800.0)
+        result = state.get("src/main.py")
+        assert result is not None
+        content, mtime = result
+        assert content == "print('hello')"
+        assert mtime == 1718956800.0
         assert state.has("src/main.py") is True
 
     def test_different_paths(self):
         """不同路径互不影响"""
         state = FileReadState()
-        state.set("a.py", "content_a")
-        state.set("b.py", "content_b")
-        assert state.get("a.py") == "content_a"
-        assert state.get("b.py") == "content_b"
+        state.set("a.py", "content_a", 1000.0)
+        state.set("b.py", "content_b", 2000.0)
+        assert state.get("a.py") == ("content_a", 1000.0)
+        assert state.get("b.py") == ("content_b", 2000.0)
 
 
 # ============================================================
