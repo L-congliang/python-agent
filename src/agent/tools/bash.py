@@ -76,3 +76,40 @@ def _truncate_output(output: str, max_lines: int = MAX_OUTPUT_LINES) -> str:
     truncated = lines[-max_lines:]
     header = f"... (truncated {len(lines) - max_lines} lines)\n"
     return header + '\n'.join(truncated)
+
+
+# ============================================================
+# 输入校验
+# ============================================================
+
+
+def validate_bash_input(raw_input: dict, context: ToolUseContext) -> ValidationResult:
+    """校验 bash 命令输入
+
+    校验规则:
+    1. command 必须存在且非空
+    2. timeout 必须是正数
+    3. workdir 如果指定，必须是绝对路径
+
+    Args:
+        raw_input: 工具调用的原始输入参数
+        context: 工具执行上下文（预留，未来用于检查 blocked commands 等）
+
+    Returns:
+        ValidationResult: 校验结果
+    """
+    _ = context  # 预留：未来用于检查 blocked commands 等
+    command = raw_input.get("command")
+    if not command or not isinstance(command, str) or not command.strip():
+        return ValidationResult.failure("command 不能为空")
+
+    timeout = raw_input.get("timeout", 30)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        return ValidationResult.failure("timeout 必须是正数")
+
+    workdir = raw_input.get("workdir")
+    if workdir is not None:
+        if not isinstance(workdir, str) or not os.path.isabs(workdir):
+            return ValidationResult.failure("workdir 必须是绝对路径")
+
+    return ValidationResult.success()

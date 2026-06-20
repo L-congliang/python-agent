@@ -2,7 +2,14 @@
 
 import pytest
 
-from agent.tools.bash import _detect_shell, _shell_cache, _truncate_output, MAX_OUTPUT_LINES
+from agent.core.context import ToolUseContext
+from agent.tools.bash import (
+    _detect_shell,
+    _shell_cache,
+    _truncate_output,
+    MAX_OUTPUT_LINES,
+    validate_bash_input,
+)
 
 
 class TestDetectShell:
@@ -64,3 +71,84 @@ class TestTruncateOutput:
         result = _truncate_output(output, max_lines=10)
         assert "truncated 90 lines" in result
         assert "line 99" in result
+
+
+# ============================================================
+# 输入校验测试
+# ============================================================
+
+
+@pytest.fixture
+def context() -> ToolUseContext:
+    """测试用的 ToolUseContext"""
+    return ToolUseContext(model="test-model")
+
+
+class TestValidateBashInput:
+    """输入校验测试"""
+
+    def test_valid_input(self, context):
+        """合法输入校验通过"""
+        result = validate_bash_input({"command": "ls -la"}, context)
+        assert result.is_valid
+
+    def test_valid_with_all_params(self, context):
+        """所有参数都合法"""
+        result = validate_bash_input(
+            {"command": "ls", "timeout": 10, "workdir": "/tmp"},
+            context,
+        )
+        assert result.is_valid
+
+    def test_empty_command(self, context):
+        """空命令校验失败"""
+        result = validate_bash_input({"command": ""}, context)
+        assert not result.is_valid
+        assert "command" in result.message
+
+    def test_missing_command(self, context):
+        """缺少 command 校验失败"""
+        result = validate_bash_input({}, context)
+        assert not result.is_valid
+
+    def test_none_command(self, context):
+        """command 为 None 校验失败"""
+        result = validate_bash_input({"command": None}, context)
+        assert not result.is_valid
+
+    def test_invalid_timeout_zero(self, context):
+        """timeout 为 0 校验失败"""
+        result = validate_bash_input(
+            {"command": "ls", "timeout": 0}, context
+        )
+        assert not result.is_valid
+        assert "timeout" in result.message
+
+    def test_invalid_timeout_negative(self, context):
+        """timeout 为负数校验失败"""
+        result = validate_bash_input(
+            {"command": "ls", "timeout": -1}, context
+        )
+        assert not result.is_valid
+
+    def test_invalid_timeout_string(self, context):
+        """timeout 为字符串校验失败"""
+        result = validate_bash_input(
+            {"command": "ls", "timeout": "abc"}, context
+        )
+        assert not result.is_valid
+
+    def test_relative_workdir(self, context):
+        """workdir 是相对路径校验失败"""
+        result = validate_bash_input(
+            {"command": "ls", "workdir": "relative/path"}, context
+        )
+        assert not result.is_valid
+        assert "workdir" in result.message
+
+    def test_absolute_workdir(self, context):
+        """workdir 是绝对路径校验通过"""
+        result = validate_bash_input(
+            {"command": "ls", "workdir": "/tmp"}, context
+        )
+        assert result.is_valid
