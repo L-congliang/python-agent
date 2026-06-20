@@ -297,3 +297,27 @@ class TestBashTool:
         result = bash_tool.execute({"command": "echo test"}, context)
         assert "test" in result.output
         assert not result.is_error
+
+
+# ============================================================
+# 输出截断集成测试
+# ============================================================
+
+
+class TestOutputTruncationIntegration:
+    """输出截断集成测试（通过 execute_bash 触发）"""
+
+    def test_large_output_truncated(self, context):
+        """大量输出被截断"""
+        result = execute_bash(
+            {"command": "for i in $(seq 1 3000); do echo line $i; done"},
+            context,
+        )
+        assert "truncated" in result.output
+        assert "line 3000" in result.output  # 尾部保留
+
+    def test_small_output_not_truncated(self, context):
+        """小量输出不截断"""
+        result = execute_bash({"command": "echo hello"}, context)
+        assert "truncated" not in result.output
+        assert "hello" in result.output
