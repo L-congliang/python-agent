@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent.tools.bash import _detect_shell, _shell_cache
+from agent.tools.bash import _detect_shell, _shell_cache, _truncate_output, MAX_OUTPUT_LINES
 
 
 class TestDetectShell:
@@ -27,8 +27,6 @@ class TestDetectShell:
         result2 = _detect_shell()
         assert result1 is result2
 
-
-from agent.tools.bash import _truncate_output, MAX_OUTPUT_LINES
 
 
 class TestTruncateOutput:
