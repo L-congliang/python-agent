@@ -10,7 +10,7 @@
 
 ## 最新状态
 
-- **当前功能**: F07 文件写入工具 — **已完成**
+- **当前功能**: F08 搜索工具 — **已完成**
 - **最后更新**: 2026-06-21
 - **最后地点**: 家
 - **当前所在地**: 家
@@ -27,6 +27,25 @@
 ---
 
 ## 工作日志
+
+### 2026-06-21 Session 11 — F08 搜索工具
+
+**做了什么:**
+- 使用 Superpowers brainstorming + writing-plans + subagent-driven-development 完成 F08 全流程
+- 实现 Grep 工具（`tools/grep.py`）：ripgrep 封装，支持正则、文件过滤、路径指定等
+- 80 个测试全部通过
+- 更新 tools/__init__.py 导出 grep_tool
+- 创建设计文档和实现计划（docs/superpowers/）
+
+**当前进度:**
+- F01-F08 status: done
+- F09-F15 status: pending
+
+**下次从这里开始:**
+- F09 权限检查（`permissions/checker.py`）
+- 需要先写 spec：`specs/F09-permission-checker.md`
+
+---
 
 ### 2026-06-21 Session 10 — F07 文件写入工具
 

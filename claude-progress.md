@@ -1,5 +1,44 @@
 # 进度日志
 
+## Session 11 — 2026-06-21 F08 搜索工具
+
+**功能**: F08 搜索工具（Grep）
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `tools/grep.py`：Grep 工具实现（329 行）
+   - `_check_ripgrep_installed()` — 检测 ripgrep 是否安装
+   - `_resolve_path()` — 路径解析（相对 → 绝对）
+   - `_build_rg_command()` — 构造 ripgrep 命令参数
+   - `_parse_rg_output()` — 解析 ripgrep 输出（文件名:行号:内容）
+   - `execute_grep()` — 核心执行逻辑
+   - `validate_grep_input()` — 输入校验
+   - `grep_tool` — build_tool() 注册
+2. ✅ 创建 `tests/test_grep.py`：80 个测试，全部通过
+3. ✅ 更新 `tools/__init__.py`：导出 grep_tool
+4. ✅ 创建设计文档和实现计划（docs/superpowers/）
+5. ✅ 创建 spec 文件（specs/F08-grep-tool.md）
+6. ✅ 更新 feature_list.json（F08 → done）
+
+### 关键设计决策
+
+- **ripgrep 封装**：调用系统的 `rg` 命令，速度快（Rust 实现）、功能全
+- **参数设计**：支持 pattern（正则）、path（路径）、include（glob 过滤）、max_results、case_sensitive、context_lines
+- **默认行为**：大小写不敏感、无上下文、最多 100 条结果、搜索整个项目
+- **错误处理**：ripgrep 未安装时返回安装指南、路径不存在、超时（30 秒）等
+- **输出格式**：文件名:行号:内容（对齐 Claude Code 的 Grep 工具）
+
+### 测试覆盖
+
+- 辅助函数：_build_rg_command（7 个）、_parse_rg_output（8 个）
+- 核心逻辑：execute_grep（12 个）
+- 输入校验：validate_grep_input（18 个）
+- 工具属性：grep_tool（11 个）
+- 补充测试：3 个
+
+---
+
 ## Session 10 — 2026-06-21 F07 文件写入工具
 
 **功能**: F07 文件写入工具（Write + Edit）
