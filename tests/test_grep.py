@@ -7,12 +7,14 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 from agent.core.context import AbortController, ToolUseContext
+from agent.core.types import ValidationResult
 from agent.tools.grep import (
     _check_ripgrep_installed,
     _resolve_path,
     _build_rg_command,
     _parse_rg_output,
     execute_grep,
+    validate_grep_input,
     GREP_PARAMETERS,
     DEFAULT_MAX_RESULTS,
 )
@@ -532,3 +534,139 @@ class TestExecuteGrep:
         assert result.is_error is True
         assert "搜索失败" in result.output
         assert "disk error" in result.output
+
+
+# ============================================================
+# validate_grep_input 测试
+# ============================================================
+
+
+class TestValidateGrepInput:
+    """validate_grep_input 输入校验测试"""
+
+    def test_valid_input(self):
+        """有效输入校验通过"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO"}, context)
+        assert result.is_valid is True
+
+    def test_empty_pattern(self):
+        """空 pattern 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": ""}, context)
+        assert result.is_valid is False
+        assert "pattern" in result.message
+
+    def test_missing_pattern(self):
+        """缺少 pattern 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({}, context)
+        assert result.is_valid is False
+        assert "pattern" in result.message
+
+    def test_whitespace_only_pattern(self):
+        """纯空格 pattern 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "   "}, context)
+        assert result.is_valid is False
+        assert "pattern" in result.message
+
+    def test_invalid_pattern_type(self):
+        """非字符串 pattern 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": 123}, context)
+        assert result.is_valid is False
+        assert "pattern" in result.message
+
+    def test_invalid_max_results_negative(self):
+        """负数 max_results 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "max_results": -1}, context)
+        assert result.is_valid is False
+        assert "max_results" in result.message
+
+    def test_invalid_max_results_zero(self):
+        """零 max_results 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "max_results": 0}, context)
+        assert result.is_valid is False
+        assert "max_results" in result.message
+
+    def test_invalid_max_results_type(self):
+        """非整数 max_results 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "max_results": "abc"}, context)
+        assert result.is_valid is False
+        assert "max_results" in result.message
+
+    def test_invalid_context_lines_negative(self):
+        """负数 context_lines 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "context_lines": -1}, context)
+        assert result.is_valid is False
+        assert "context_lines" in result.message
+
+    def test_invalid_context_lines_type(self):
+        """非整数 context_lines 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "context_lines": 1.5}, context)
+        assert result.is_valid is False
+        assert "context_lines" in result.message
+
+    def test_empty_path_string(self):
+        """空字符串 path 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "path": ""}, context)
+        assert result.is_valid is False
+        assert "path" in result.message
+
+    def test_whitespace_only_path(self):
+        """纯空格 path 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "path": "   "}, context)
+        assert result.is_valid is False
+        assert "path" in result.message
+
+    def test_invalid_path_type(self):
+        """非字符串 path 校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "path": 123}, context)
+        assert result.is_valid is False
+        assert "path" in result.message
+
+    @patch("agent.tools.grep.os.path.exists", return_value=False)
+    def test_path_not_exists(self, mock_exists):
+        """不存在的路径校验失败"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "path": "/nonexistent"}, context)
+        assert result.is_valid is False
+        assert "不存在" in result.message
+
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    def test_valid_path(self, mock_exists):
+        """有效路径校验通过"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "path": "/some/path"}, context)
+        assert result.is_valid is True
+
+    def test_valid_max_results(self):
+        """有效 max_results 校验通过"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "max_results": 50}, context)
+        assert result.is_valid is True
+
+    def test_valid_context_lines(self):
+        """有效 context_lines 校验通过"""
+        context = _make_context("/test")
+        result = validate_grep_input({"pattern": "TODO", "context_lines": 3}, context)
+        assert result.is_valid is True
+
+    def test_valid_all_params(self):
+        """所有有效参数校验通过"""
+        context = _make_context("/test")
+        result = validate_grep_input({
+            "pattern": "TODO",
+            "max_results": 50,
+            "context_lines": 2,
+        }, context)
+        assert result.is_valid is True

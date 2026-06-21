@@ -12,7 +12,7 @@ import subprocess
 from typing import Any
 
 from agent.core.context import ToolUseContext
-from agent.core.types import ToolResult
+from agent.core.types import ToolResult, ValidationResult
 
 
 # ============================================================
@@ -124,6 +124,56 @@ def _parse_rg_output(output: str) -> list[dict[str, Any]]:
                 # 行号解析失败，跳过该行
                 continue
     return results
+
+
+# ============================================================
+# 输入校验
+# ============================================================
+
+
+def validate_grep_input(
+    raw_input: dict[str, Any], context: ToolUseContext
+) -> ValidationResult:
+    """校验 grep 输入
+
+    校验规则:
+    1. pattern 必须存在、是字符串且非空
+    2. max_results 必须是正整数
+    3. context_lines 必须是非负整数
+    4. path 如果提供，必须是非空字符串且路径存在
+
+    Args:
+        raw_input: 工具输入
+        context: 工具执行上下文
+
+    Returns:
+        ValidationResult
+    """
+    # 检查 pattern
+    pattern = raw_input.get("pattern")
+    if not pattern or not isinstance(pattern, str) or not pattern.strip():
+        return ValidationResult.failure("pattern 不能为空")
+
+    # 检查 max_results
+    max_results = raw_input.get("max_results", DEFAULT_MAX_RESULTS)
+    if not isinstance(max_results, int) or max_results < 1:
+        return ValidationResult.failure("max_results 必须是正整数")
+
+    # 检查 context_lines
+    context_lines = raw_input.get("context_lines", 0)
+    if not isinstance(context_lines, int) or context_lines < 0:
+        return ValidationResult.failure("context_lines 必须是非负整数")
+
+    # 检查 path（如果提供）
+    path = raw_input.get("path")
+    if path is not None:
+        if not isinstance(path, str) or not path.strip():
+            return ValidationResult.failure("path 不能为空字符串")
+        abs_path = _resolve_path(path, context.cwd)
+        if not os.path.exists(abs_path):
+            return ValidationResult.failure(f"路径不存在: {abs_path}")
+
+    return ValidationResult.success()
 
 
 # ============================================================
