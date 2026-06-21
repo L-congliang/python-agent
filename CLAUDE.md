@@ -2,6 +2,12 @@
 
 本项目模仿 Claude Code，构建一个终端里的 AI 编程助手。
 
+## 工作流
+
+**开始任何功能开发前，必须先读 `C:\Users\Liang\.claude\WORKFLOW.md`，按工作流执行。**
+
+工作流定义了 5 个阶段：决策 → 规划 → 执行 → 检验 → 沉淀，每个阶段有对应的 skill 命令。
+
 ## 项目定位
 
 **这是实习项目，不是 demo。** 代码质量要达到能拿出去面试讲解的水平。
@@ -36,20 +42,17 @@ src/agent/
 每次完成改动后，必须运行以下命令确认没有破坏：
 
 ```bash
-# 激活环境
-source .venv/Scripts/activate
+# 同步依赖（自动创建虚拟环境）
+uv sync
 
-# 安装/更新依赖
-pip install -e ".[dev]"
-
-# 类型检查（如果配置了 mypy）
-mypy src/ --strict
+# 类型检查
+uv run mypy src/ --strict
 
 # 运行测试
-python -m pytest tests/ -x -v
+uv run pytest tests/ -x -v
 
 # 完整验证（全部通过才能提交）
-make check
+uv run make check
 ```
 
 **没有通过验证的代码不能提交。**
