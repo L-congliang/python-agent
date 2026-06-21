@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
+import subprocess
+from unittest.mock import MagicMock, patch
 
+from agent.core.context import AbortController, ToolUseContext
 from agent.tools.grep import (
     _check_ripgrep_installed,
     _resolve_path,
     _build_rg_command,
     _parse_rg_output,
+    execute_grep,
     GREP_PARAMETERS,
     DEFAULT_MAX_RESULTS,
 )
@@ -38,6 +41,10 @@ class TestImports:
     def test_import_default_max_results(self):
         """DEFAULT_MAX_RESULTS 可以导入"""
         assert isinstance(DEFAULT_MAX_RESULTS, int)
+
+    def test_import_execute_grep(self):
+        """execute_grep 可以导入"""
+        assert callable(execute_grep)
 
 
 # ============================================================
@@ -339,3 +346,189 @@ class TestParseRgOutput:
         output = "file.py:not_a_number:content\n"
         results = _parse_rg_output(output)
         assert len(results) == 0
+
+
+# ============================================================
+# execute_grep 测试
+# ============================================================
+
+
+def _make_context(cwd: str = ".") -> ToolUseContext:
+    """创建测试用的 ToolUseContext"""
+    return ToolUseContext(
+        model="test",
+        cwd=cwd,
+        abort_controller=AbortController(),
+    )
+
+
+class TestExecuteGrep:
+    """execute_grep 核心逻辑测试"""
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=False)
+    def test_ripgrep_not_installed(self, mock_check):
+        """ripgrep 未安装时返回错误"""
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO"}, context)
+        assert result.is_error is True
+        assert "ripgrep" in result.output
+        assert "安装" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=False)
+    def test_path_not_exists(self, mock_exists, mock_check):
+        """路径不存在时返回错误"""
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO", "path": "/nonexistent"}, context)
+        assert result.is_error is True
+        assert "不存在" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    def test_abort_returns_error(self, mock_check):
+        """中断时返回错误"""
+        context = _make_context("/test")
+        context.abort_controller.abort()
+        result = execute_grep({"pattern": "TODO"}, context)
+        assert result.is_error is True
+        assert "取消" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_basic_search(self, mock_run, mock_exists, mock_check):
+        """基本搜索功能"""
+        mock_result = MagicMock()
+        mock_result.stdout = "src/main.py:15:# TODO: implement this\n"
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO"}, context)
+        assert result.is_error is False
+        assert "src/main.py:15:# TODO: implement this" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_multiple_results(self, mock_run, mock_exists, mock_check):
+        """多个搜索结果"""
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "src/main.py:15:# TODO: first\n"
+            "src/utils.py:42:# TODO: second\n"
+        )
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO"}, context)
+        assert result.is_error is False
+        assert "src/main.py:15:# TODO: first" in result.output
+        assert "src/utils.py:42:# TODO: second" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_no_matches_returncode_1(self, mock_run, mock_exists, mock_check):
+        """无匹配结果（ripgrep 返回 1）"""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 1
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "NOTFOUND"}, context)
+        assert result.is_error is False
+        assert "No matches" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_no_matches_empty_output(self, mock_run, mock_exists, mock_check):
+        """无匹配结果（返回码 0 但输出为空）"""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "NOTFOUND"}, context)
+        assert result.is_error is False
+        assert "No matches" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_timeout(self, mock_run, mock_exists, mock_check):
+        """搜索超时"""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="rg", timeout=30)
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO"}, context)
+        assert result.is_error is True
+        assert "超时" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_rg_error(self, mock_run, mock_exists, mock_check):
+        """ripgrep 执行错误"""
+        mock_result = MagicMock()
+        mock_result.returncode = 2
+        mock_result.stderr = "regex parse error"
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "[invalid"}, context)
+        assert result.is_error is True
+        assert "搜索失败" in result.output
+        assert "regex parse error" in result.output
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_default_path_is_cwd(self, mock_run, mock_exists, mock_check):
+        """默认搜索路径是 cwd"""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 1
+        mock_run.return_value = mock_result
+
+        context = _make_context("/my/project")
+        execute_grep({"pattern": "TODO"}, context)
+        # 验证 subprocess.run 被调用，且命令中包含 cwd 路径
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert "/my/project" in cmd
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_with_include(self, mock_run, mock_exists, mock_check):
+        """带文件过滤的搜索"""
+        mock_result = MagicMock()
+        mock_result.stdout = "src/main.py:1:hello\n"
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "hello", "include": "*.py"}, context)
+        assert result.is_error is False
+        # 验证命令中包含 --glob 参数
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert "--glob" in cmd
+        assert "*.py" in cmd
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_unexpected_exception(self, mock_run, mock_exists, mock_check):
+        """未预期的异常被捕获"""
+        mock_run.side_effect = OSError("disk error")
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO"}, context)
+        assert result.is_error is True
+        assert "搜索失败" in result.output
+        assert "disk error" in result.output

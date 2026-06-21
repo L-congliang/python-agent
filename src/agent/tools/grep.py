@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from typing import Any
+
+from agent.core.context import ToolUseContext
+from agent.core.types import ToolResult
 
 
 # ============================================================
@@ -120,6 +124,101 @@ def _parse_rg_output(output: str) -> list[dict[str, Any]]:
                 # 行号解析失败，跳过该行
                 continue
     return results
+
+
+# ============================================================
+# 核心逻辑
+# ============================================================
+
+
+def execute_grep(input: dict[str, Any], context: ToolUseContext) -> ToolResult:
+    """执行 grep 搜索
+
+    使用 ripgrep 搜索文件内容，返回匹配的行。
+
+    Args:
+        input: 工具输入参数，包含 pattern、path、include 等
+        context: 工具执行上下文
+
+    Returns:
+        ToolResult: 搜索结果或错误信息
+    """
+    # 检查 ripgrep 是否安装
+    if not _check_ripgrep_installed():
+        return ToolResult(
+            output="ripgrep 未安装。请安装 ripgrep：\n"
+                   "  Windows: winget install BurntSushi.ripgrep.MSVC\n"
+                   "  Mac: brew install ripgrep\n"
+                   "  Linux: sudo apt install ripgrep",
+            is_error=True,
+        )
+
+    # 检查中断
+    if context.abort_controller.is_aborted:
+        return ToolResult(output="搜索被取消", is_error=True)
+
+    # 解析参数
+    pattern: str = input.get("pattern", "")
+    path = input.get("path", context.cwd)
+    include = input.get("include")
+    max_results = input.get("max_results", DEFAULT_MAX_RESULTS)
+    case_sensitive = input.get("case_sensitive", False)
+    context_lines = input.get("context_lines", 0)
+
+    # 解析路径
+    abs_path = _resolve_path(path, context.cwd)
+
+    # 检查路径存在性
+    if not os.path.exists(abs_path):
+        return ToolResult(output=f"路径不存在: {abs_path}", is_error=True)
+
+    try:
+        # 构造命令
+        cmd = _build_rg_command(
+            pattern=pattern,
+            path=abs_path,
+            include=include,
+            max_results=max_results,
+            case_sensitive=case_sensitive,
+            context_lines=context_lines,
+        )
+
+        # 执行命令
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # 处理结果
+        if result.returncode == 0:
+            # 有匹配结果
+            results = _parse_rg_output(result.stdout)
+            if not results:
+                return ToolResult(output="No matches found", is_error=False)
+
+            # 格式化输出
+            output_lines = []
+            for r in results:
+                output_lines.append(f"{r['file']}:{r['line']}:{r['content']}")
+            return ToolResult(output="\n".join(output_lines), is_error=False)
+
+        elif result.returncode == 1:
+            # 无匹配结果（ripgrep 返回 1 表示无匹配）
+            return ToolResult(output="No matches found", is_error=False)
+
+        else:
+            # 错误
+            return ToolResult(
+                output=f"搜索失败: {result.stderr}",
+                is_error=True,
+            )
+
+    except subprocess.TimeoutExpired:
+        return ToolResult(output="搜索超时（30秒）", is_error=True)
+    except Exception as e:
+        return ToolResult(output=f"搜索失败: {str(e)}", is_error=True)
 
 
 # ============================================================
