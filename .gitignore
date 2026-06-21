@@ -46,8 +46,4 @@ htmlcov/
 *.log
 
 # Internal development records (not for public)
-LEARNING_NOTES.md
-LEARNING_PROGRESS.md
-claude-progress.md
-DEV_SYNC.md
-.superpowers/
+
