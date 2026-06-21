@@ -12,6 +12,7 @@ from typing import Any
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
 from agent.tools.base import build_tool
+from agent.tools.file_write import _resolve_path, _update_cache
 
 
 # ============================================================
@@ -81,7 +82,6 @@ def validate_file_edit_input(raw_input: dict[str, Any], context: ToolUseContext)
         return ValidationResult.failure("new_string 不能为空")
 
     # 检查文件存在性
-    from agent.tools.file_write import _resolve_path
     abs_path = _resolve_path(file_path, context.cwd)
     if not os.path.exists(abs_path):
         return ValidationResult.failure(f"文件不存在: {abs_path}")
@@ -147,13 +147,12 @@ def execute_file_edit(input: dict[str, Any], context: ToolUseContext) -> ToolRes
     """
     try:
         # 1. 解析参数
-        file_path = input.get("file_path")
-        old_string = input.get("old_string")
-        new_string = input.get("new_string")
-        replace_all = input.get("replace_all", False)
+        file_path: str = input["file_path"]
+        old_string: str = input["old_string"]
+        new_string: str = input["new_string"]
+        replace_all: bool = input.get("replace_all", False)
 
         # 2. 解析路径
-        from agent.tools.file_write import _resolve_path, _update_cache
         abs_path = _resolve_path(file_path, context.cwd)
 
         # 3. 检查中断
