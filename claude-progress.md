@@ -1,5 +1,45 @@
 # 进度日志
 
+## Session 12 — 2026-06-21 F09 权限检查器
+
+**功能**: F09 权限检查器（PermissionChecker）
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `permissions/checker.py`：权限检查器实现（163 行）
+   - `PermissionMode` 枚举 — 权限模式（default、plan）
+   - `check_system_policy()` — 系统级策略判断函数
+   - `PermissionChecker` 类 — 权限检查器，管理模式和策略判断
+2. ✅ 更新 `permissions/__init__.py`：导出新类型
+3. ✅ 创建 `tests/test_permission_checker.py`：27 个测试，全部通过
+4. ✅ 创建 spec 文件（specs/F09-permission-checker.md）
+5. ✅ 更新 feature_list.json（F09 → done）
+
+### 关键设计决策
+
+- **权限模式**：default（正常）和 plan（只读）两种模式
+- **决策优先级**：工具级 check_permissions 优先于系统级策略
+- **系统级策略**：基于 is_read_only/is_destructive + 权限模式自动判断
+  - default 模式：只读=allow，非只读=ask
+  - plan 模式：只读=allow，非只读=deny
+- **工具级决策合并**：工具级 deny/ask 直接返回，allow 继续检查系统级策略
+
+### 测试覆盖
+
+- PermissionMode 枚举：3 个测试
+- check_system_policy 函数：8 个测试（两种模式 × 三种工具类型 + 消息检查）
+- PermissionChecker 类：7 个测试（模式管理 + 检查逻辑）
+- 工具级决策合并：6 个测试（优先级验证）
+- 边界情况：3 个测试（模式切换、多次检查、不同工具）
+
+### 验证结果
+
+- 全量测试：407 passed, 3 skipped
+- mypy --strict（permissions/）：0 错误
+
+---
+
 ## Session 11 — 2026-06-21 F08 搜索工具
 
 **功能**: F08 搜索工具（Grep）

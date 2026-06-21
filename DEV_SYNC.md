@@ -10,7 +10,7 @@
 
 ## 最新状态
 
-- **当前功能**: F08 搜索工具 — **已完成**
+- **当前功能**: F09 权限检查 — **已完成**
 - **最后更新**: 2026-06-21
 - **最后地点**: 家
 - **当前所在地**: 家
@@ -27,6 +27,27 @@
 ---
 
 ## 工作日志
+
+### 2026-06-21 Session 12 — F09 权限检查器
+
+**做了什么:**
+- 实现 F09 权限检查器（`permissions/checker.py`，163 行）
+  - `PermissionMode` 枚举：default（正常）、plan（只读）
+  - `check_system_policy()`：系统级策略判断
+  - `PermissionChecker` 类：管理模式和策略判断
+- 27 个测试全部通过
+- 更新 `permissions/__init__.py` 导出新类型
+- 创建 spec 文件（specs/F09-permission-checker.md）
+
+**当前进度:**
+- F01-F09 status: done
+- F10-F15 status: pending
+
+**下次从这里开始:**
+- F10 上下文压缩（`context/compressor.py`）
+- 需要先写 spec：`specs/F10-context-compressor.md`
+
+---
 
 ### 2026-06-21 Session 11 — F08 搜索工具
 

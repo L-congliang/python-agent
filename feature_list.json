@@ -69,7 +69,7 @@
       "name": "权限检查",
       "file": "permissions/checker.py",
       "spec": "specs/F09-permission-checker.md",
-      "status": "pending",
+      "status": "done",
       "description": "检查工具是否有权限执行"
     },
     {
