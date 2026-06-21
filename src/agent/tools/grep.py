@@ -13,6 +13,7 @@ from typing import Any
 
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
+from agent.tools.base import build_tool
 
 
 # ============================================================
@@ -308,3 +309,21 @@ GREP_PARAMETERS = {
     },
     "required": ["pattern"],
 }
+
+
+# ============================================================
+# 工具注册
+# ============================================================
+
+grep_tool = build_tool(
+    name="grep",
+    description="搜索文件内容。支持正则表达式、文件过滤、路径指定等。",
+    parameters=GREP_PARAMETERS,
+    execute_fn=execute_grep,
+    is_read_only=lambda input: True,
+    is_concurrency_safe=lambda input: True,
+    validate_input=validate_grep_input,
+    get_summary=lambda input: f"Searching for '{input.get('pattern', '')}'",
+    get_user_facing_name=lambda input: "Grep",
+    get_activity_description=lambda input: f"Searching for '{input.get('pattern', '')}'",
+)

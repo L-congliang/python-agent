@@ -670,3 +670,153 @@ class TestValidateGrepInput:
             "context_lines": 2,
         }, context)
         assert result.is_valid is True
+
+
+# ============================================================
+# grep_tool 工具属性测试
+# ============================================================
+
+
+class TestGrepTool:
+    """grep_tool 工具属性测试"""
+
+    def test_tool_name(self):
+        """工具名称为 grep"""
+        from agent.tools.grep import grep_tool
+        assert grep_tool.name == "grep"
+
+    def test_tool_description(self):
+        """工具描述包含关键词"""
+        from agent.tools.grep import grep_tool
+        desc = grep_tool.description
+        assert "搜索" in desc or "search" in desc.lower()
+
+    def test_tool_parameters_schema(self):
+        """参数 Schema 包含 pattern 等字段"""
+        from agent.tools.grep import grep_tool
+        props = grep_tool.parameters["properties"]
+        assert "pattern" in props
+        assert "path" in props
+        assert "include" in props
+        assert "max_results" in props
+        assert "case_sensitive" in props
+        assert "context_lines" in props
+        assert grep_tool.parameters["required"] == ["pattern"]
+
+    def test_is_read_only(self):
+        """grep 是只读工具"""
+        from agent.tools.grep import grep_tool
+        assert grep_tool.is_read_only({}) is True
+
+    def test_is_concurrency_safe(self):
+        """grep 支持并发"""
+        from agent.tools.grep import grep_tool
+        assert grep_tool.is_concurrency_safe({}) is True
+
+    def test_is_not_destructive(self):
+        """grep 不是破坏性工具"""
+        from agent.tools.grep import grep_tool
+        assert grep_tool.is_destructive({}) is False
+
+    def test_get_summary(self):
+        """摘要包含搜索模式"""
+        from agent.tools.grep import grep_tool
+        summary = grep_tool.get_summary({"pattern": "TODO"})
+        assert "TODO" in summary
+
+    def test_get_user_facing_name(self):
+        """用户可见名称为 Grep"""
+        from agent.tools.grep import grep_tool
+        assert grep_tool.get_user_facing_name({}) == "Grep"
+
+    def test_get_activity_description(self):
+        """活动描述包含搜索模式"""
+        from agent.tools.grep import grep_tool
+        desc = grep_tool.get_activity_description({"pattern": "TODO"})
+        assert "TODO" in desc
+
+    def test_validate_input_delegates(self):
+        """validate_input 正确委托"""
+        from agent.tools.grep import grep_tool
+        # 空 pattern 应该失败
+        result = grep_tool.validate_input(
+            {"pattern": ""}, _make_context("/test")
+        )
+        assert not result.is_valid
+
+    def test_execute_delegates(self):
+        """execute 正确委托到 execute_grep"""
+        from agent.tools.grep import grep_tool
+        with (
+            patch("agent.tools.grep._check_ripgrep_installed", return_value=True),
+            patch("agent.tools.grep.os.path.exists", return_value=True),
+            patch("agent.tools.grep.subprocess.run") as mock_run,
+        ):
+            mock_result = MagicMock()
+            mock_result.stdout = "src/main.py:1:hello\n"
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            context = _make_context("/test")
+            result = grep_tool.execute({"pattern": "hello"}, context)
+            assert result.is_error is False
+            assert "hello" in result.output
+
+
+# ============================================================
+# execute_grep 补充测试
+# ============================================================
+
+
+class TestExecuteGrepAdditional:
+    """execute_grep 补充测试用例"""
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_execute_grep_with_include(self, mock_run, mock_exists, mock_check):
+        """测试带文件过滤的搜索 - 验证命令参数"""
+        mock_result = MagicMock()
+        mock_result.stdout = "src/main.py:15:# TODO: implement this\n"
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO", "include": "*.py"}, context)
+        assert result.is_error is False
+        # 验证命令中包含 --glob *.py
+        call_args = mock_run.call_args[0][0]
+        assert "--glob" in call_args
+        assert "*.py" in call_args
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_execute_grep_case_sensitive(self, mock_run, mock_exists, mock_check):
+        """测试大小写敏感搜索 - 验证命令参数"""
+        mock_result = MagicMock()
+        mock_result.stdout = "src/main.py:15:# TODO: implement this\n"
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "TODO", "case_sensitive": True}, context)
+        assert result.is_error is False
+        # 验证命令中包含 --case-sensitive
+        call_args = mock_run.call_args[0][0]
+        assert "--case-sensitive" in call_args
+
+    @patch("agent.tools.grep._check_ripgrep_installed", return_value=True)
+    @patch("agent.tools.grep.os.path.exists", return_value=True)
+    @patch("agent.tools.grep.subprocess.run")
+    def test_execute_grep_no_matches(self, mock_run, mock_exists, mock_check):
+        """测试无匹配结果 - 返回码 1"""
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mock_result.returncode = 1
+        mock_run.return_value = mock_result
+
+        context = _make_context("/test")
+        result = execute_grep({"pattern": "NONEXISTENT"}, context)
+        assert result.is_error is False
+        assert "No matches found" in result.output
