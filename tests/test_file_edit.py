@@ -133,6 +133,14 @@ class TestValidateFileEditInput:
         )
         assert not result.is_valid
 
+    def test_empty_old_string(self, context):
+        """空 old_string 校验失败"""
+        result = validate_file_edit_input(
+            {"file_path": "test.txt", "old_string": "", "new_string": "new"}, context
+        )
+        assert not result.is_valid
+        assert "old_string" in result.message
+
     def test_none_new_string(self, context, tmp_dir):
         """None new_string 校验失败"""
         file_path = tmp_dir / "test.txt"
@@ -151,6 +159,14 @@ class TestValidateFileEditInput:
             {"file_path": "test.txt", "old_string": "a", "new_string": 123}, context
         )
         assert not result.is_valid
+
+    def test_empty_new_string(self, context):
+        """空 new_string 校验失败"""
+        result = validate_file_edit_input(
+            {"file_path": "test.txt", "old_string": "old", "new_string": ""}, context
+        )
+        assert not result.is_valid
+        assert "new_string" in result.message
 
     def test_file_not_exists(self, context):
         """文件不存在校验失败"""

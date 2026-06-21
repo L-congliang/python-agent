@@ -73,11 +73,11 @@ def validate_file_edit_input(raw_input: dict[str, Any], context: ToolUseContext)
         return ValidationResult.failure("file_path 不能为空")
 
     old_string = raw_input.get("old_string")
-    if old_string is None or not isinstance(old_string, str):
+    if old_string is None or not isinstance(old_string, str) or old_string == "":
         return ValidationResult.failure("old_string 不能为空")
 
     new_string = raw_input.get("new_string")
-    if new_string is None or not isinstance(new_string, str):
+    if new_string is None or not isinstance(new_string, str) or new_string == "":
         return ValidationResult.failure("new_string 不能为空")
 
     # 检查文件存在性
