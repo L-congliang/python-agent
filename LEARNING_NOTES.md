@@ -54,6 +54,25 @@
     - [Jupyter Notebook 格式](#jupyter-notebook-格式)
     - [Q&A 回顾](#qa-回顾设计时问过的问题)
 
+### F07 文件写入工具
+19. [F07 文件写入工具核心概念](#f07-文件写入工具核心概念)
+    - [Write vs Edit 工具](#write-vs-edit-工具)
+    - [old_string 唯一性](#old_string-唯一性)
+    - [先读后写机制](#先读后写机制)
+    - [缓存更新](#缓存更新)
+
+### F08 搜索工具
+20. [F08 搜索工具核心概念](#f08-搜索工具核心概念)
+    - [ripgrep 封装](#ripgrep-封装)
+    - [输出格式](#输出格式)
+    - [参数设计](#参数设计)
+
+### F09 权限检查器
+21. [F09 权限检查器核心概念](#f09-权限检查器核心概念)
+    - [权限模式](#权限模式)
+    - [决策优先级](#决策优先级)
+    - [工具级 vs 系统级](#工具级-vs-系统级)
+
 ### 工作流执行
 19. [为什么 Agent 会跳过工作流？](#为什么-agent-会跳过工作流)
 20. [工作流配置层次](#工作流配置层次)
@@ -1185,6 +1204,170 @@ Write/Edit 修改文件后，Read 工具的缓存会过期。主动更新缓存�
 **Q8: 为什么不用 append 模式？**
 
 YAGNI（You Ain't Gonna Need It）。当前场景没有追加文件的需求，Write 整体覆盖 + Edit 局部替换已经够用。等真正需要时再加。
+
+---
+
+## F08 搜索工具
+
+### ripgrep 封装
+
+**为什么用 ripgrep 而不是自己实现？**
+
+| 对比 | ripgrep | 自己实现 |
+|------|---------|----------|
+| 速度 | Rust 写的，比 grep 快 10 倍+ | Python 慢 |
+| 功能 | 正则、文件过滤、忽略 .git | 需要自己实现 |
+| 代码量 | 只需构造命令和解析输出 | 几百行 |
+| 维护 | 社区维护 | 自己维护 |
+
+**调用方式：**
+```python
+cmd = [
+    "rg",
+    "--line-number",      # 显示行号
+    "--with-filename",    # 显示文件名
+    "--no-heading",       # 不显示标题
+    "--max-count", "100", # 最多 100 条
+    "--case-insensitive", # 大小写不敏感
+    pattern,              # 搜索模式
+    path,                 # 搜索路径
+]
+result = subprocess.run(cmd, capture_output=True, text=True)
+```
+
+### 输出格式
+
+**ripgrep 输出格式：** `文件名:行号:内容`
+
+```bash
+# ripgrep 原始输出
+src/main.py:10:def hello():
+src/main.py:11:    print("hello")
+
+# 解析后
+[
+    {"file": "src/main.py", "line": 10, "content": "def hello():"},
+    {"file": "src/main.py", "line": 11, "content": "    print(\"hello\")"},
+]
+```
+
+**解析逻辑：**
+```python
+for line in output.strip().split("\n"):
+    parts = line.split(":", 2)  # 最多分割 2 次
+    if len(parts) == 3:
+        results.append({
+            "file": parts[0],
+            "line": int(parts[1]),
+            "content": parts[2],
+        })
+```
+
+### 参数设计
+
+**核心参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `pattern` | 必填 | 搜索模式（支持正则） |
+| `path` | cwd | 搜索路径 |
+| `include` | None | 文件过滤（glob） |
+| `max_results` | 100 | 最大结果数 |
+| `case_sensitive` | False | 大小写敏感 |
+| `context_lines` | 0 | 上下文行数 |
+
+**为什么默认大小写不敏感？**
+- 搜索 "todo" 能找到 "TODO"、"Todo"、"todo"
+- 对齐 Claude Code 行为
+- 用户可以通过参数启用敏感
+
+**为什么默认最多 100 条？**
+- 避免信息过载
+- 控制 token 消耗
+- 提高响应速度
+
+---
+
+## F09 权限检查器
+
+### 权限模式
+
+**两种模式：**
+
+| 模式 | 只读工具 | 非只读工具 | 非只读+破坏性 |
+|------|----------|------------|---------------|
+| `default` | allow | ask | ask |
+| `plan` | allow | deny | deny |
+
+- **default**：正常模式，非只读操作需要用户确认
+- **plan**：计划模式，只允许只读操作，禁止所有写入
+
+**应用场景：**
+```python
+# default 模式：Agent 可以读写文件
+checker = PermissionChecker(mode=PermissionMode.DEFAULT)
+decision = checker.check(file_write, input, context)  # ask
+
+# plan 模式：Agent 只能读文件
+checker = PermissionChecker(mode=PermissionMode.PLAN)
+decision = checker.check(file_write, input, context)  # deny
+```
+
+### 决策优先级
+
+**两级决策机制：**
+
+```
+工具级 check_permissions
+    ↓ (如果返回 deny/ask，直接使用)
+    ↓ (如果返回 allow，继续检查系统级策略)
+系统级策略（基于 is_read_only/is_destructive + 权限模式）
+```
+
+**为什么工具级优先？**
+1. 工具最了解自己的行为
+2. 工具可以有特殊的权限需求
+3. 系统级策略是通用规则，工具级是特殊规则
+
+### 工具级 vs 系统级
+
+**工具级决策：**
+```python
+class Tool:
+    def check_permissions(self, input, context):
+        # 工具自己的权限逻辑
+        if some_condition:
+            return PermissionDecision.deny("原因")
+        return PermissionDecision.allow()
+```
+
+**系统级决策：**
+```python
+def check_system_policy(tool, input, mode):
+    if mode == PermissionMode.PLAN:
+        if not tool.is_read_only:
+            return PermissionDecision.deny("计划模式禁止写入")
+    if not tool.is_read_only:
+        return PermissionDecision.ask("需要用户确认")
+    return PermissionDecision.allow()
+```
+
+**合并逻辑：**
+```python
+def check(tool, input, context):
+    # 1. 先检查工具级
+    tool_decision = tool.check_permissions(input, context)
+    if tool_decision.is_deny or tool_decision.is_ask:
+        return tool_decision  # 工具级优先
+
+    # 2. 再检查系统级
+    return check_system_policy(tool, input, self.mode)
+```
+
+**面试要点：**
+- 权限检查是安全机制的核心
+- 两级决策提供灵活性
+- 默认安全（非只读需要确认）
 
 ---
 
