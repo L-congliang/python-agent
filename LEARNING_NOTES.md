@@ -54,6 +54,12 @@
     - [Jupyter Notebook 格式](#jupyter-notebook-格式)
     - [Q&A 回顾](#qa-回顾设计时问过的问题)
 
+### 工作流执行
+19. [为什么 Agent 会跳过工作流？](#为什么-agent-会跳过工作流)
+20. [工作流配置层次](#工作流配置层次)
+21. [Skill 调用方式](#skill-调用方式)
+22. [执行检查点](#执行检查点硬性规则)
+
 ---
 
 ## 1. httpx vs Anthropic SDK
@@ -1179,3 +1185,63 @@ Write/Edit 修改文件后，Read 工具的缓存会过期。主动更新缓存�
 **Q8: 为什么不用 append 模式？**
 
 YAGNI（You Ain't Gonna Need It）。当前场景没有追加文件的需求，Write 整体覆盖 + Edit 局部替换已经够用。等真正需要时再加。
+
+---
+
+## 工作流执行与 Agent 行为
+
+### 为什么 Agent 会跳过工作流？
+
+**问题：** Agent 知道工作流存在，但实际执行时跳过了 brainstorm/plan/code-review 步骤。
+
+**根本原因：**
+
+| 原因 | 表现 | 解决方案 |
+|------|------|----------|
+| 不知道 skill 做什么 | 没读过 SKILL.md，不知道输入输出 | 直接用 `Skill()` 调用，不需要读文件 |
+| 自行判断模式 | 觉得"简单"就跳过 | 必须问用户确认模式 |
+| 指令被淹没 | CLAUDE.md 太长，规则不突出 | 加执行检查点，放在显眼位置 |
+
+### 工作流配置层次
+
+```
+~/.claude/CLAUDE.md          ← 全局规则（所有项目共享）
+    └── 5. Workflow Enforcement（执行检查点）
+
+~/.claude/WORKFLOW.md        ← 工作流定义（所有项目共享）
+    └── 五阶段、三种模式、skill 用法
+
+项目/CLAUDE.md               ← 项目专属规则
+    └── 技术栈、验证命令、目录结构
+
+项目/.claude/projects/xxx/memory/  ← 项目专属记忆
+    └── MEMORY.md（索引）
+    └── 各记忆文件
+```
+
+### Skill 调用方式
+
+**错误方式：** 需要知道文件路径
+```python
+# 不需要这样
+read("~/.claude/plugins/compound-engineering/.../ce-brainstorm/SKILL.md")
+```
+
+**正确方式：** 直接调用
+```python
+Skill("ce-brainstorm")   # 插件系统自动加载
+Skill("ce-plan")
+Skill("ce-code-review")
+```
+
+### 执行检查点（硬性规则）
+
+1. **确认模式** — 告诉用户判断的模式和理由，等确认
+2. **按顺序用 skill** — 不能以"需求清楚"跳过
+3. **不确定就问** — 不能自行判断跳过步骤
+
+**反面教材（F09 事件）：**
+- 用户要求做 F09（权限检查器）
+- Agent 自行判断"改动小"，跳过了所有工作流步骤
+- 直接写代码完成，没有 brainstorm/plan/code-review
+- **错误：** 未确认模式、未使用任何 skill
