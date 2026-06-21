@@ -8,6 +8,8 @@ from unittest.mock import patch
 from agent.tools.grep import (
     _check_ripgrep_installed,
     _resolve_path,
+    _build_rg_command,
+    _parse_rg_output,
     GREP_PARAMETERS,
     DEFAULT_MAX_RESULTS,
 )
@@ -150,3 +152,190 @@ class TestGrepParameters:
     def test_default_max_results_value(self):
         """默认最大结果数为 100"""
         assert DEFAULT_MAX_RESULTS == 100
+
+
+# ============================================================
+# _build_rg_command 测试
+# ============================================================
+
+
+class TestBuildRgCommand:
+    """ripgrep 命令构造测试"""
+
+    def test_basic_command(self):
+        """测试基本的命令构造"""
+        cmd = _build_rg_command(
+            pattern="TODO",
+            path="src/",
+            include=None,
+            max_results=100,
+            case_sensitive=False,
+            context_lines=0,
+        )
+        assert "rg" in cmd
+        assert "--line-number" in cmd
+        assert "--with-filename" in cmd
+        assert "--no-heading" in cmd
+        assert "TODO" in cmd
+        assert "src/" in cmd
+
+    def test_with_include(self):
+        """测试带文件过滤的命令构造"""
+        cmd = _build_rg_command(
+            pattern="TODO",
+            path="src/",
+            include="*.py",
+            max_results=100,
+            case_sensitive=False,
+            context_lines=0,
+        )
+        assert "--glob" in cmd
+        assert "*.py" in cmd
+
+    def test_case_sensitive(self):
+        """测试大小写敏感的命令构造"""
+        cmd = _build_rg_command(
+            pattern="TODO",
+            path="src/",
+            include=None,
+            max_results=100,
+            case_sensitive=True,
+            context_lines=0,
+        )
+        assert "--case-sensitive" in cmd
+        assert "--case-insensitive" not in cmd
+
+    def test_case_insensitive(self):
+        """测试大小写不敏感的命令构造"""
+        cmd = _build_rg_command(
+            pattern="TODO",
+            path="src/",
+            include=None,
+            max_results=100,
+            case_sensitive=False,
+            context_lines=0,
+        )
+        assert "--case-insensitive" in cmd
+
+    def test_context_lines(self):
+        """测试带上下文的命令构造"""
+        cmd = _build_rg_command(
+            pattern="TODO",
+            path="src/",
+            include=None,
+            max_results=100,
+            case_sensitive=False,
+            context_lines=2,
+        )
+        assert "--context" in cmd
+        assert "2" in cmd
+
+    def test_max_results(self):
+        """测试最大结果数参数"""
+        cmd = _build_rg_command(
+            pattern="TODO",
+            path="src/",
+            include=None,
+            max_results=50,
+            case_sensitive=False,
+            context_lines=0,
+        )
+        assert "--max-count" in cmd
+        assert "50" in cmd
+
+    def test_all_options(self):
+        """测试所有选项组合"""
+        cmd = _build_rg_command(
+            pattern="test.*pattern",
+            path="tests/",
+            include="*.test.py",
+            max_results=200,
+            case_sensitive=True,
+            context_lines=3,
+        )
+        assert cmd[0] == "rg"
+        assert "--line-number" in cmd
+        assert "--with-filename" in cmd
+        assert "--no-heading" in cmd
+        assert "--max-count" in cmd
+        assert "200" in cmd
+        assert "--glob" in cmd
+        assert "*.test.py" in cmd
+        assert "--context" in cmd
+        assert "3" in cmd
+        assert "test.*pattern" in cmd
+        assert "tests/" in cmd
+
+
+# ============================================================
+# _parse_rg_output 测试
+# ============================================================
+
+
+class TestParseRgOutput:
+    """ripgrep 输出解析测试"""
+
+    def test_basic_output(self):
+        """测试基本的输出解析"""
+        output = "src/main.py:15:# TODO: implement this\nsrc/utils.py:42:# TODO: fix bug\n"
+        results = _parse_rg_output(output)
+        assert len(results) == 2
+        assert results[0]["file"] == "src/main.py"
+        assert results[0]["line"] == 15
+        assert results[0]["content"] == "# TODO: implement this"
+        assert results[1]["file"] == "src/utils.py"
+        assert results[1]["line"] == 42
+        assert results[1]["content"] == "# TODO: fix bug"
+
+    def test_empty_output(self):
+        """测试空输出"""
+        output = ""
+        results = _parse_rg_output(output)
+        assert len(results) == 0
+
+    def test_no_match(self):
+        """测试无匹配结果"""
+        output = ""
+        results = _parse_rg_output(output)
+        assert len(results) == 0
+
+    def test_single_result(self):
+        """测试单个结果"""
+        output = "README.md:1:# Project Title\n"
+        results = _parse_rg_output(output)
+        assert len(results) == 1
+        assert results[0]["file"] == "README.md"
+        assert results[0]["line"] == 1
+        assert results[0]["content"] == "# Project Title"
+
+    def test_content_with_colons(self):
+        """测试内容中包含冒号"""
+        output = "config.py:10:DATABASE_URL = 'postgresql://user:pass@host/db'\n"
+        results = _parse_rg_output(output)
+        assert len(results) == 1
+        assert results[0]["file"] == "config.py"
+        assert results[0]["line"] == 10
+        assert results[0]["content"] == "DATABASE_URL = 'postgresql://user:pass@host/db'"
+
+    def test_windows_path(self):
+        """测试 Windows 路径格式"""
+        output = "src\\main.py:15:print('hello')\n"
+        results = _parse_rg_output(output)
+        assert len(results) == 1
+        assert results[0]["file"] == "src\\main.py"
+        assert results[0]["line"] == 15
+        assert results[0]["content"] == "print('hello')"
+
+    def test_malformed_line_skipped(self):
+        """测试格式错误的行被跳过"""
+        output = "valid.py:1:code\nnot_a_match\nalso_valid.py:2:more code\n"
+        results = _parse_rg_output(output)
+        assert len(results) == 2
+        assert results[0]["file"] == "valid.py"
+        assert results[1]["file"] == "also_valid.py"
+
+    def test_invalid_line_number_skipped(self):
+        """测试行号无效时跳过"""
+        output = "file.py:not_a_number:content\n"
+        results = _parse_rg_output(output)
+        assert len(results) == 0
