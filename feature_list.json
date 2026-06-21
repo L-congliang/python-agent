@@ -51,10 +51,10 @@
     {
       "id": "F07",
       "name": "文件写入工具",
-      "file": "tools/file_write.py",
+      "file": "tools/file_write.py, tools/file_edit.py",
       "spec": "specs/F07-file-write.md",
-      "status": "pending",
-      "description": "写入文件内容"
+      "status": "done",
+      "description": "写入文件内容（Write + Edit），支持文本文件和 Jupyter Notebook"
     },
     {
       "id": "F08",
