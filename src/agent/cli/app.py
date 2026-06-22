@@ -77,6 +77,7 @@ class AgentApp:
     def __init__(
         self,
         on_message: Callable[[str], Iterator[StreamEvent]],
+        on_compact: Callable[[], tuple[int, int]] | None = None,
         model: str = "mimo-v2.5-pro",
         version: str = "0.1.0",
     ) -> None:
@@ -84,11 +85,13 @@ class AgentApp:
 
         Args:
             on_message: 用户输入消息后的回调，返回事件流
+            on_compact: 压缩命令的回调，返回 (压缩前消息数, 压缩后消息数)
             model: 模型名称
             version: 版本号
         """
         self.console = Console()
         self.on_message = on_message
+        self.on_compact = on_compact
         self.model = model
         self.version = version
         self._stream_buffer: str = ""
@@ -314,11 +317,12 @@ class AgentApp:
         if cmd == "/help":
             self.console.print(f"""
 [bold {BRAND_COLOR}]可用命令:[/]
-  /help   - 显示此帮助
-  /clear  - 清屏
-  /reset  - 重置对话历史
-  /exit   - 退出程序
-  /quit   - 退出程序
+  /help    - 显示此帮助
+  /clear   - 清屏
+  /reset   - 重置对话历史
+  /compact - 压缩上下文历史
+  /exit    - 退出程序
+  /quit    - 退出程序
 
 [{INACTIVE_GRAY}]快捷键:[/]
   Ctrl+C  - 取消当前输入
@@ -332,6 +336,20 @@ class AgentApp:
 
         if cmd == "/reset":
             self.console.print("[yellow]对话已重置[/yellow]")
+            return True
+
+        if cmd == "/compact":
+            if self.on_compact:
+                try:
+                    before, after = self.on_compact()
+                    if before == 0:
+                        self.console.print("[yellow]没有消息需要压缩[/yellow]")
+                    else:
+                        self.console.print(f"[green]压缩完成: {before} -> {after} 条消息[/green]")
+                except Exception as e:
+                    self.console.print(f"[red]压缩失败: {e}[/red]")
+            else:
+                self.console.print("[yellow]压缩功能未启用[/yellow]")
             return True
 
         return False

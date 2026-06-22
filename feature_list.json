@@ -77,8 +77,8 @@
       "name": "上下文压缩",
       "file": "context/compressor.py",
       "spec": "specs/F10-context-compressor.md",
-      "status": "pending",
-      "description": "压缩过长的对话历史"
+      "status": "done",
+      "description": "压缩过长的对话历史（滑动窗口 + LLM 摘要）"
     },
     {
       "id": "F11",

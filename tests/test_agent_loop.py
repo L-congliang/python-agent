@@ -10,6 +10,8 @@
 6. 中断支持
 7. 消息历史累积
 8. reset 清空历史
+9. Token 追踪
+10. 自动压缩
 """
 
 import threading
@@ -446,3 +448,101 @@ class TestAgentLoopToolResultFormat:
                     found_error = True
                     break
         assert found_error
+
+
+class TestAgentLoopTokenTracking:
+    """Token 追踪测试"""
+
+    def test_token_count_starts_at_zero(self):
+        """初始 token 计数为 0"""
+        client = _mock_client([
+            _text_stream(["你好"], [{"type": "text", "text": "你好"}]),
+        ])
+        registry = ToolRegistry()
+        loop = AgentLoop(client, registry)
+
+        assert loop.token_count == 0
+
+    def test_token_count_accumulates(self):
+        """多轮对话后 token 计数正确累加"""
+        # 创建带 usage 的 StreamResult
+        def _text_stream_with_usage(chunks, content_blocks, usage):
+            result = StreamResult(text=iter(chunks), content_blocks=content_blocks)
+            result.usage = usage
+            return result
+
+        client = _mock_client([
+            _text_stream_with_usage(["你好"], [{"type": "text", "text": "你好"}], {"input_tokens": 100, "output_tokens": 50}),
+            _text_stream_with_usage(["好的"], [{"type": "text", "text": "好的"}], {"input_tokens": 120, "output_tokens": 60}),
+        ])
+        registry = ToolRegistry()
+        loop = AgentLoop(client, registry)
+
+        loop.run("你好")
+        assert loop.token_count == 100  # 只累加 input_tokens
+
+        loop.run("继续")
+        assert loop.token_count == 220  # 100 + 120
+
+    def test_token_count_resets(self):
+        """reset 后 token 计数清零"""
+        def _text_stream_with_usage(chunks, content_blocks, usage):
+            result = StreamResult(text=iter(chunks), content_blocks=content_blocks)
+            result.usage = usage
+            return result
+
+        client = _mock_client([
+            _text_stream_with_usage(["你好"], [{"type": "text", "text": "你好"}], {"input_tokens": 100, "output_tokens": 50}),
+        ])
+        registry = ToolRegistry()
+        loop = AgentLoop(client, registry)
+
+        loop.run("你好")
+        assert loop.token_count == 100
+
+        loop.reset()
+        assert loop.token_count == 0
+
+    def test_compact_resets_token_count(self):
+        """手动压缩后 token 计数重置"""
+        def _text_stream_with_usage(chunks, content_blocks, usage):
+            result = StreamResult(text=iter(chunks), content_blocks=content_blocks)
+            result.usage = usage
+            return result
+
+        client = _mock_client([
+            _text_stream_with_usage(["你好"], [{"type": "text", "text": "你好"}], {"input_tokens": 100, "output_tokens": 50}),
+        ])
+        # Mock compressor
+        client.chat = MagicMock(return_value="摘要内容")
+
+        registry = ToolRegistry()
+        loop = AgentLoop(client, registry)
+
+        loop.run("你好")
+        assert loop.token_count == 100
+
+        loop.compact()
+        assert loop.token_count == 0
+
+    def test_auto_compaction_triggered(self):
+        """token 达到阈值时自动触发压缩"""
+        def _text_stream_with_usage(chunks, content_blocks, usage):
+            result = StreamResult(text=iter(chunks), content_blocks=content_blocks)
+            result.usage = usage
+            return result
+
+        # 设置 context_window=1000，阈值为 800
+        client = _mock_client([
+            _text_stream_with_usage(["你好"], [{"type": "text", "text": "你好"}], {"input_tokens": 900, "output_tokens": 50}),
+        ])
+        # Mock compressor
+        client.chat = MagicMock(return_value="摘要内容")
+
+        registry = ToolRegistry()
+        config = LoopConfig(context_window=1000)
+        loop = AgentLoop(client, registry, config)
+
+        loop.run("你好")
+        # 900 >= 800 (1000 * 0.8)，应该触发压缩
+        assert loop.token_count == 0  # 压缩后重置

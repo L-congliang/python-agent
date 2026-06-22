@@ -10,8 +10,8 @@
 
 ## 最新状态
 
-- **当前功能**: F09 权限检查 — **已完成**
-- **最后更新**: 2026-06-21
+- **当前功能**: F10 上下文压缩 — **已完成**
+- **最后更新**: 2026-06-22
 - **最后地点**: 家
 - **当前所在地**: 家
 
@@ -27,6 +27,30 @@
 ---
 
 ## 工作日志
+
+### 2026-06-22 Session 13 — F10 上下文压缩器
+
+**做了什么:**
+- 实现 F10 上下文压缩器（`context/compressor.py`）
+  - `ContextCompressor` 类：滑动窗口 + LLM 摘要
+  - Token 追踪：从 API 响应提取 `usage` 字段
+  - 自动压缩：`_total_tokens >= context_window * 0.8` 时触发
+  - 保留策略：保留最近 30% 的 token
+  - 降级策略：LLM 失败时返回原始文本前 500 字符
+- 扩展 `core/model.py`：StreamResult 添加 `usage` 字段
+- 扩展 `core/loop.py`：AgentLoop token 追踪和压缩检查
+- 扩展 `cli/app.py`：添加 /compact 命令
+- 24 个新测试全部通过（总计 431 passed）
+
+**当前进度:**
+- F01-F10 status: done
+- F11-F15 status: pending
+
+**下次从这里开始:**
+- F11 Glob 文件查找（`tools/glob.py`）
+- 需要先写 spec：`specs/F11-glob.md`
+
+---
 
 ### 2026-06-21 Session 12 — F09 权限检查器
 

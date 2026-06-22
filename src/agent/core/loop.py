@@ -20,7 +20,7 @@ Agent 主循环 - 对齐 Claude Code 的 query.ts
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +33,7 @@ from agent.core.types import (
     ToolResult,
 )
 from agent.core.context import ToolUseContext, AbortController, FileReadState
+from agent.context.compressor import ContextCompressor
 from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger("agent.loop")
@@ -48,7 +49,10 @@ class LoopConfig:
 
     # 模型配置
     model: str = "mimo-v2.5-pro"
-    max_tokens: int = 4096
+    max_tokens: int = 4096  # 单次回复最大 token 数
+
+    # 上下文窗口
+    context_window: int = 128_000  # 上下文窗口大小（用于压缩判断）
 
     # 循环控制
     max_turns: int = 50  # 最大轮次（防止无限循环）
@@ -57,6 +61,9 @@ class LoopConfig:
     # 系统提示
     system_prompt: str = ""
     append_system_prompt: str = ""  # 追加的系统提示
+
+    # 回调
+    on_notify: Callable[[str], None] | None = None  # 通知回调
 
     # 调试
     debug: bool = False
@@ -103,6 +110,9 @@ class AgentLoop:
         self._tool_call_count: int = 0
         self._abort_controller = AbortController()
         self._file_read_state = FileReadState()
+        # Token 追踪
+        self._total_tokens: int = 0
+        self._compressor = ContextCompressor(client)
 
     def run(self, user_input: str) -> str:
         """运行一轮完整的对话（同步）
@@ -146,6 +156,14 @@ class AgentLoop:
                 raise
 
             self._turn_count += 1
+
+            # 累加 token 使用量
+            if stream_result.usage:
+                self._total_tokens += stream_result.usage.get("input_tokens", 0)
+                logger.debug("Token count: %d (+%d input)", self._total_tokens, stream_result.usage.get("input_tokens", 0))
+
+            # 检查是否需要压缩
+            self._check_compaction()
 
             # 解析 content blocks
             content_blocks = stream_result.content_blocks
@@ -223,6 +241,14 @@ class AgentLoop:
 
             self._turn_count += 1
 
+            # 累加 token 使用量
+            if stream_result.usage:
+                self._total_tokens += stream_result.usage.get("input_tokens", 0)
+                logger.debug("Token count: %d (+%d input)", self._total_tokens, stream_result.usage.get("input_tokens", 0))
+
+            # 检查是否需要压缩
+            self._check_compaction()
+
             # 获取完整的 content blocks
             content_blocks = stream_result.content_blocks
             text_content, tool_calls = self._parse_content_blocks(content_blocks)
@@ -270,6 +296,7 @@ class AgentLoop:
         self._messages.clear()
         self._turn_count = 0
         self._tool_call_count = 0
+        self._total_tokens = 0
         self._abort_controller = AbortController()
         self._file_read_state = FileReadState()
         logger.info("Agent loop reset")
@@ -289,6 +316,32 @@ class AgentLoop:
         """当前工具调用次数"""
         return self._tool_call_count
 
+    @property
+    def token_count(self) -> int:
+        """当前累计的 token 数量"""
+        return self._total_tokens
+
+    def compact(self) -> None:
+        """手动触发上下文压缩
+
+        压缩旧消息历史，保留最近的消息。
+        压缩后 token 计数器重置。
+        """
+        if not self._messages:
+            logger.info("Compact: no messages to compress")
+            return
+
+        keep_tokens = int(self._config.context_window * 0.3)
+        before_count = len(self._messages)
+        self._messages = self._compressor.compress(self._messages, keep_tokens)
+        after_count = len(self._messages)
+
+        # 重置 token 计数器（压缩后的消息量难以精确计算）
+        self._total_tokens = 0
+
+        logger.info("Compact: %d messages -> %d messages", before_count, after_count)
+        self._notify(f"[压缩] 消息历史已压缩: {before_count} -> {after_count} 条")
+
     def abort(self) -> None:
         """中断当前执行"""
         self._abort_controller.abort()
@@ -297,6 +350,27 @@ class AgentLoop:
     # ============================================================
     # 内部方法
     # ============================================================
+
+    def _check_compaction(self) -> None:
+        """检查是否需要自动压缩
+
+        当 _total_tokens >= context_window * 0.8 时自动触发压缩。
+        """
+        threshold = int(self._config.context_window * 0.8)
+        if self._total_tokens >= threshold:
+            logger.info("Token count (%d) reached threshold (%d), auto-compacting", self._total_tokens, threshold)
+            self.compact()
+
+    def _notify(self, message: str) -> None:
+        """显示通知信息
+
+        Args:
+            message: 通知内容
+        """
+        logger.info("Notify: %s", message)
+        # 如果设置了回调，调用回调通知用户
+        if self._config.on_notify:
+            self._config.on_notify(message)
 
     def _build_system_prompt(self) -> str:
         """构建系统提示

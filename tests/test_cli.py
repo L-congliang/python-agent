@@ -348,3 +348,49 @@ class TestResponse:
             mock_print.assert_called_once()
             from rich.markdown import Markdown
             assert isinstance(mock_print.call_args[0][0], Markdown)
+
+
+class TestCompactCommand:
+    """压缩命令测试"""
+
+    def test_compact_command_with_callback(self):
+        """有回调时，/compact 命令调用回调"""
+        on_compact = MagicMock(return_value=(10, 5))
+        app = AgentApp(on_message=lambda m: iter([]), on_compact=on_compact)
+
+        with patch.object(app.console, "print") as mock_print:
+            result = app._handle_command("/compact")
+            assert result is True
+            on_compact.assert_called_once()
+            # 验证显示了压缩结果
+            mock_print.assert_called_once()
+            assert "10 -> 5" in str(mock_print.call_args)
+
+    def test_compact_command_no_messages(self):
+        """没有消息时，显示提示"""
+        on_compact = MagicMock(return_value=(0, 0))
+        app = AgentApp(on_message=lambda m: iter([]), on_compact=on_compact)
+
+        with patch.object(app.console, "print") as mock_print:
+            result = app._handle_command("/compact")
+            assert result is True
+            assert "没有消息" in str(mock_print.call_args)
+
+    def test_compact_command_without_callback(self):
+        """没有回调时，显示未启用提示"""
+        app = make_app()
+
+        with patch.object(app.console, "print") as mock_print:
+            result = app._handle_command("/compact")
+            assert result is True
+            assert "未启用" in str(mock_print.call_args)
+
+    def test_compact_command_error(self):
+        """压缩失败时，显示错误信息"""
+        on_compact = MagicMock(side_effect=Exception("API error"))
+        app = AgentApp(on_message=lambda m: iter([]), on_compact=on_compact)
+
+        with patch.object(app.console, "print") as mock_print:
+            result = app._handle_command("/compact")
+            assert result is True
+            assert "API error" in str(mock_print.call_args)

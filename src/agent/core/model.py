@@ -35,9 +35,11 @@ class StreamResult:
         for chunk in result.text:       # 流式显示
             print(chunk, end="")
         blocks = result.content_blocks  # 解析 tool_use
+        tokens = result.usage           # token 使用量
     """
     text: Iterator[str]
     content_blocks: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, int] | None = None
 
 
 @dataclass
@@ -147,7 +149,7 @@ class MimoClient:
         result = StreamResult(text=iter(()))  # 占位，下面替换
 
         def _stream() -> Iterator[str]:
-            """流式生成器：yield text chunk，return 时填充 content_blocks"""
+            """流式生成器：yield text chunk，return 时填充 content_blocks 和 usage"""
             with self._client.messages.stream(
                 model=self.config.model,
                 max_tokens=self.config.max_tokens,
@@ -156,10 +158,16 @@ class MimoClient:
             ) as stream:
                 for text in stream.text_stream:
                     yield text
-                # 流结束后，获取完整 message 的 content blocks
+                # 流结束后，获取完整 message 的 content blocks 和 usage
                 # 此时 stream 仍处于 open 状态（在 with 块内）
                 final_message = stream.get_final_message()
                 result.content_blocks = [block.model_dump() for block in final_message.content]
+                # 提取 token 使用量
+                if final_message.usage:
+                    result.usage = {
+                        "input_tokens": final_message.usage.input_tokens,
+                        "output_tokens": final_message.usage.output_tokens,
+                    }
 
         try:
             result.text = _stream()

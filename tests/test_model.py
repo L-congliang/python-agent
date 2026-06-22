@@ -143,15 +143,16 @@ class TestMimoClient:
         assert call_kwargs.kwargs["system"] == "你是一个测试助手"
 
     def test_chat_stream_yields_chunks(self, client):
-        """流式对话逐块返回文本 + content_blocks"""
+        """流式对话逐块返回文本 + content_blocks + usage"""
         # Mock stream context manager
         mock_stream = MagicMock()
         mock_stream.text_stream = ["你", "好", "！"]
-        # Mock get_final_message 返回带 content 的 message
+        # Mock get_final_message 返回带 content 和 usage 的 message
         mock_final_msg = MagicMock()
         mock_block = MagicMock()
         mock_block.model_dump.return_value = {"type": "text", "text": "你好！"}
         mock_final_msg.content = [mock_block]
+        mock_final_msg.usage = MagicMock(input_tokens=10, output_tokens=5)
         mock_stream.get_final_message.return_value = mock_final_msg
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
         mock_stream.__exit__ = MagicMock(return_value=False)
@@ -164,6 +165,8 @@ class TestMimoClient:
         # 流结束后 content_blocks 应被填充
         assert len(result.content_blocks) == 1
         assert result.content_blocks[0] == {"type": "text", "text": "你好！"}
+        # usage 应被正确提取
+        assert result.usage == {"input_tokens": 10, "output_tokens": 5}
 
     def test_retry_on_rate_limit(self, client):
         """限流时自动重试"""
@@ -225,6 +228,42 @@ class TestMimoClient:
         with pytest.raises(anthropic.APIError):
             client.chat([{"role": "user", "content": "测试"}])
         assert client._client.messages.create.call_count == 1
+
+    def test_chat_stream_usage_extracted(self, client):
+        """API 返回 usage 时，正确提取 input_tokens 和 output_tokens"""
+        mock_stream = MagicMock()
+        mock_stream.text_stream = ["回复"]
+        mock_final_msg = MagicMock()
+        mock_block = MagicMock()
+        mock_block.model_dump.return_value = {"type": "text", "text": "回复"}
+        mock_final_msg.content = [mock_block]
+        mock_final_msg.usage = MagicMock(input_tokens=100, output_tokens=50)
+        mock_stream.get_final_message.return_value = mock_final_msg
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        client._client.messages.stream = MagicMock(return_value=mock_stream)
+
+        result = client.chat_stream([{"role": "user", "content": "测试"}])
+        list(result.text)  # 消费流
+        assert result.usage == {"input_tokens": 100, "output_tokens": 50}
+
+    def test_chat_stream_usage_none_when_absent(self, client):
+        """API 不返回 usage 时，usage 为 None"""
+        mock_stream = MagicMock()
+        mock_stream.text_stream = ["回复"]
+        mock_final_msg = MagicMock()
+        mock_block = MagicMock()
+        mock_block.model_dump.return_value = {"type": "text", "text": "回复"}
+        mock_final_msg.content = [mock_block]
+        mock_final_msg.usage = None  # API 不返回 usage
+        mock_stream.get_final_message.return_value = mock_final_msg
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        client._client.messages.stream = MagicMock(return_value=mock_stream)
+
+        result = client.chat_stream([{"role": "user", "content": "测试"}])
+        list(result.text)  # 消费流
+        assert result.usage is None
 
     def test_max_retries_exhausted(self, client):
         """重试次数用完后抛出异常"""

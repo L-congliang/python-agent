@@ -1,5 +1,57 @@
 # 进度日志
 
+## Session 13 — 2026-06-22 F10 上下文压缩器
+
+**功能**: F10 上下文压缩器（ContextCompressor）
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 扩展 `core/model.py`：StreamResult 添加 `usage` 字段
+   - 从 API 响应提取 `input_tokens` 和 `output_tokens`
+   - 添加 2 个新测试
+2. ✅ 扩展 `core/loop.py`：AgentLoop token 追踪和压缩检查
+   - 添加 `_total_tokens` 计数器
+   - 添加 `context_window` 配置（默认 128K）
+   - 添加 `token_count` 属性
+   - 添加 `compact()` 手动压缩方法
+   - 添加 `_check_compaction()` 自动压缩检查（80% 阈值）
+   - 添加 `_notify()` 通知方法（支持回调）
+   - 添加 5 个新测试
+3. ✅ 创建 `context/compressor.py`：上下文压缩器实现
+   - `ContextCompressor` 类
+   - `compress()` 方法：滑动窗口 + LLM 摘要
+   - `_find_split_point()`：从后向前累加 token 找分割点
+   - `_estimate_tokens()`：简单估算（len(text) // 4）
+   - `_format_messages()`：格式化消息为可读文本
+   - `_generate_summary()`：调用 LLM 生成摘要（失败时降级）
+   - 添加 13 个测试
+4. ✅ 扩展 `cli/app.py`：添加 /compact 命令
+   - `on_compact` 回调支持
+   - 帮助文本更新
+   - 添加 4 个测试
+5. ✅ 创建解决方案文档（docs/solutions/）
+6. ✅ 更新 feature_list.json（F10 → done）
+
+### 关键设计决策
+
+- **Token 来源**：从 API 响应直接获取 `usage` 字段，比本地估算更准确
+- **压缩触发**：`_total_tokens >= context_window * 0.8` 时自动触发
+- **保留比例**：保留最近 30% 的 token（`context_window * 0.3`）
+- **LLM 摘要**：使用结构化 prompt 引导 LLM 保留关键决策、偏好、约束
+- **降级策略**：LLM 摘要失败时，返回原始文本的前 500 字符
+- **可配置**：`context_window` 通过 LoopConfig 暴露，支持自定义
+
+### 测试覆盖
+
+- model.py：2 个新测试（usage 提取、usage 为 None）
+- loop.py：5 个新测试（token 计数、累加、重置、手动压缩、自动压缩）
+- compressor.py：13 个测试（压缩逻辑、token 估算、分割点、格式化）
+- app.py：4 个新测试（/compact 命令）
+- 全量测试：431 passed, 3 skipped
+
+---
+
 ## Session 12 — 2026-06-21 F09 权限检查器
 
 **功能**: F09 权限检查器（PermissionChecker）
