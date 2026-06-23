@@ -263,3 +263,38 @@ def load_config() -> ModelConfig:
         base_url=os.environ.get("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/anthropic"),
         model=os.environ.get("MIMO_MODEL", "mimo-v2.5-pro"),
     )
+
+
+def create_adapter(model_name: str | None = None) -> Any:
+    """根据模型名称创建对应的适配器。
+
+    Args:
+        model_name: 模型名称。如果为 None，从环境变量读取。
+
+    Returns:
+        ModelAdapter 实例（MimoAdapter 或 DeepSeekAdapter）。
+
+    Raises:
+        ValueError: 不支持的模型名称。
+    """
+    # 延迟导入，避免循环依赖
+    from .adapters.mimo_adapter import MimoAdapter
+    from .adapters.deepseek_adapter import DeepSeekAdapter
+
+    # 模型名 → 适配器类的映射
+    adapter_map = {
+        "mimo-v2.5-pro": MimoAdapter,
+        "mimo": MimoAdapter,
+        "deepseek-v4-pro": DeepSeekAdapter,
+        "deepseek": DeepSeekAdapter,
+    }
+
+    model = model_name or os.environ.get("MIMO_MODEL", "mimo-v2.5-pro")
+    adapter_cls = adapter_map.get(model)
+
+    if adapter_cls is None:
+        # 默认使用 mimo 适配器
+        logger.warning("Unknown model '%s', defaulting to MimoAdapter", model)
+        adapter_cls = MimoAdapter
+
+    return adapter_cls()

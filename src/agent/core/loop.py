@@ -15,6 +15,10 @@ Agent 主循环 - 对齐 Claude Code 的 query.ts
 - 为什么需要 AbortController？
   因为用户可能在工具执行过程中按 Ctrl+C，
   需要优雅地取消而不是直接崩溃。
+
+- 为什么用 ModelAdapter？
+  不同模型（mimo、DeepSeek）的响应格式有差异（ThinkingBlock、工具调用格式等）。
+  适配器把这些差异封装起来，AgentLoop 只依赖统一接口。
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent.core.model import MimoClient
+from agent.core.model_adapter import ModelAdapter, ToolCall as AdapterToolCall
 from agent.core.types import (
     Message,
     Role,
@@ -77,9 +82,10 @@ class AgentLoop:
 
     使用方式:
         client = MimoClient(config)
+        adapter = MimoAdapter()
         registry = ToolRegistry()
         # ... 注册工具 ...
-        loop = AgentLoop(client, registry)
+        loop = AgentLoop(client, registry, adapter=adapter)
 
         # 同步运行
         reply = loop.run("帮我写一个 hello world")
@@ -94,13 +100,15 @@ class AgentLoop:
         client: MimoClient,
         registry: ToolRegistry,
         config: LoopConfig | None = None,
+        adapter: ModelAdapter | None = None,
     ) -> None:
         """初始化主循环
 
         Args:
-            client: mimo API 客户端
+            client: mimo API 客户端（负责 SDK 调用，包括流式）
             registry: 工具注册表
             config: 循环配置（可选，有默认值）
+            adapter: 模型适配器（负责解析响应差异）。如果为 None，使用默认的 mimo 适配器。
         """
         self._client = client
         self._registry = registry
@@ -113,6 +121,13 @@ class AgentLoop:
         # Token 追踪
         self._total_tokens: int = 0
         self._compressor = ContextCompressor(client)
+        # 模型适配器（延迟导入，避免循环依赖）
+        self._adapter: ModelAdapter
+        if adapter is None:
+            from agent.core.adapters.mimo_adapter import MimoAdapter
+            self._adapter = MimoAdapter()
+        else:
+            self._adapter = adapter
 
     def run(self, user_input: str) -> str:
         """运行一轮完整的对话（同步）
@@ -165,20 +180,20 @@ class AgentLoop:
             # 检查是否需要压缩
             self._check_compaction()
 
-            # 解析 content blocks
+            # 用适配器解析 content blocks（处理模型差异）
             content_blocks = stream_result.content_blocks
-            text_content, tool_calls = self._parse_content_blocks(content_blocks)
+            parsed = self._adapter.parse_response(content_blocks)
 
             # 没有工具调用 → 最终回复
-            if not tool_calls:
+            if not parsed.tool_calls:
                 self._messages.append({
                     "role": "assistant",
                     "content": content_blocks,
                 })
-                return text_content
+                return parsed.text
 
             # 有工具调用 → 检查工具调用次数限制
-            if self._tool_call_count + len(tool_calls) > self._config.max_tool_calls:
+            if self._tool_call_count + len(parsed.tool_calls) > self._config.max_tool_calls:
                 logger.warning(
                     "Max tool calls (%d) would be exceeded",
                     self._config.max_tool_calls,
@@ -191,11 +206,15 @@ class AgentLoop:
                 "content": content_blocks,
             })
 
-            # 执行工具
-            tool_results = self._execute_tool_calls(tool_calls)
+            # 执行工具（转换适配器的 ToolCall 为内部的 ToolCall）
+            internal_tool_calls = [
+                ToolCall(id="", name=tc.name, arguments=tc.arguments)
+                for tc in parsed.tool_calls
+            ]
+            tool_results = self._execute_tool_calls(internal_tool_calls)
 
             # 注入工具结果到消息历史
-            self._handle_tool_results(tool_calls, tool_results)
+            self._handle_tool_results(internal_tool_calls, tool_results)
 
             # 继续循环（模型会基于工具结果回复）
 
@@ -249,12 +268,12 @@ class AgentLoop:
             # 检查是否需要压缩
             self._check_compaction()
 
-            # 获取完整的 content blocks
+            # 用适配器解析 content blocks（处理模型差异）
             content_blocks = stream_result.content_blocks
-            text_content, tool_calls = self._parse_content_blocks(content_blocks)
+            parsed = self._adapter.parse_response(content_blocks)
 
             # 没有工具调用 → 最终回复
-            if not tool_calls:
+            if not parsed.tool_calls:
                 self._messages.append({
                     "role": "assistant",
                     "content": content_blocks,
@@ -262,7 +281,7 @@ class AgentLoop:
                 return
 
             # 有工具调用 → 检查工具调用次数限制
-            if self._tool_call_count + len(tool_calls) > self._config.max_tool_calls:
+            if self._tool_call_count + len(parsed.tool_calls) > self._config.max_tool_calls:
                 logger.warning(
                     "Max tool calls (%d) would be exceeded",
                     self._config.max_tool_calls,
@@ -276,11 +295,15 @@ class AgentLoop:
                 "content": content_blocks,
             })
 
-            # 执行工具
-            tool_results = self._execute_tool_calls(tool_calls)
+            # 执行工具（转换适配器的 ToolCall 为内部的 ToolCall）
+            internal_tool_calls = [
+                ToolCall(id="", name=tc.name, arguments=tc.arguments)
+                for tc in parsed.tool_calls
+            ]
+            tool_results = self._execute_tool_calls(internal_tool_calls)
 
             # 注入工具结果到消息历史
-            self._handle_tool_results(tool_calls, tool_results)
+            self._handle_tool_results(internal_tool_calls, tool_results)
 
             # 继续循环（模型会基于工具结果回复）
 
