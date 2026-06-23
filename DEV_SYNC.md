@@ -10,8 +10,8 @@
 
 ## 最新状态
 
-- **当前功能**: F10 上下文压缩 — **已完成**
-- **最后更新**: 2026-06-22
+- **当前功能**: F11 Glob 文件发现工具 — **已完成**
+- **最后更新**: 2026-06-23
 - **最后地点**: 家
 - **当前所在地**: 家
 
@@ -27,6 +27,28 @@
 ---
 
 ## 工作日志
+
+### 2026-06-23 Session 14 — F11 Glob 文件发现工具
+
+**做了什么:**
+- 实现 F11 Glob 文件发现工具（`tools/glob.py`，238 行）
+  - pathlib.Path.glob() 实现，无外部依赖
+  - 支持 **/*.py 等递归 glob 模式
+  - 按修改时间排序（默认）/ 按路径排序
+  - max_results 限制（默认 100）
+- 更新 `tools/__init__.py` 导出 glob_tool
+- 34 个测试全部通过
+- 使用 GSD 工作流（plan-phase → execute-phase → code-review）
+
+**当前进度:**
+- F01-F11 status: done
+- F12-F15 status: pending
+
+**下次从这里开始:**
+- F12 Sub-agent 派生（`core/subagent.py`）
+- 需要先写 spec：`specs/F12-subagent.md`
+
+---
 
 ### 2026-06-22 Session 13 — F10 上下文压缩器
 

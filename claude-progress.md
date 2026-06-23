@@ -1,5 +1,42 @@
 # 进度日志
 
+## Session 14 — 2026-06-23 F11 Glob 文件发现工具
+
+**功能**: F11 Glob 文件发现工具
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `tools/glob.py`：Glob 工具实现（238 行）
+   - `_resolve_path()` — 路径解析（复用 grep.py 模式）
+   - `_get_file_mtime()` — 获取文件修改时间
+   - `_sort_results()` — 排序（按修改时间降序 / 按路径字母序）
+   - `validate_glob_input()` — 输入校验（pattern、path、max_results、sort_by）
+   - `execute_glob()` — 核心执行逻辑（pathlib.Path.glob()）
+   - `glob_tool` — build_tool() 注册
+2. ✅ 更新 `tools/__init__.py`：导出 glob_tool
+3. ✅ 创建 `tests/test_glob.py`：34 个测试，全部通过
+4. ✅ 使用 GSD 工作流（plan-phase → execute-phase → code-review）
+
+### 关键设计决策
+
+- **pathlib.Path.glob()**：标准库实现，无外部依赖，跨平台
+- **只保留文件**：`p.is_file()` 过滤掉目录，对齐 Claude Code 行为
+- **默认按修改时间排序**：最新修改的文件排在前面，符合"最近在改什么"的直觉
+- **max_results=100**：防止大项目返回过多结果
+- **输出格式**：每行一个路径 + 末尾 "(共 N 个文件)"，简洁清晰
+
+### 测试覆盖
+
+- 辅助函数：_resolve_path（3 个）、_get_file_mtime（2 个）、_sort_results（3 个）
+- 输入校验：validate_glob_input（7 个）
+- 核心执行：execute_glob（7 个）
+- 工具注册：glob_tool（5 个）
+- mypy --strict：0 错误
+- 全量测试：465 passed, 3 skipped
+
+---
+
 ## Session 13 — 2026-06-22 F10 上下文压缩器
 
 **功能**: F10 上下文压缩器（ContextCompressor）

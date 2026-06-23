@@ -85,7 +85,7 @@
       "name": "Glob 文件查找",
       "file": "tools/glob.py",
       "spec": "specs/F11-glob.md",
-      "status": "pending",
+      "status": "done",
       "description": "按模式匹配查找文件（**/*.py 等）"
     },
     {
