@@ -46,9 +46,10 @@
 - [x] 1.11 运行 benchmark 对比 Phase 0 基线
 
 ### 验证指标
-- avg_prompt_compression_ratio（压缩比）
-- current_request_preserved_rate（当前请求保留率）
-- pass_rate 不能下降
+- avg_prompt_compression_ratio（压缩比）: 0.0（测试数据太小，未触发压缩）
+- current_request_preserved_rate（当前请求保留率）: 100%
+- pass_rate: 40%（与 Phase 0 基线一致，未下降）
+- 全量测试: 521 passed, 3 skipped
 
 ## Phase 2: 分层记忆系统
 
