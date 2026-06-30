@@ -28,22 +28,22 @@
 ## Phase 1: 上下文工程
 
 ### 核心实现
-- [ ] 1.1 实现 TokenCounter（精确 token 计数，替代 len(text)//4）
-- [ ] 1.2 定义 Section 预算配置（prefix/tools/memory/history/current_request）
-- [ ] 1.3 实现 ContextManager（预算制 prompt 组装）
-- [ ] 1.4 实现优先级裁剪（history → tool_results → memory → tools → prefix）
-- [ ] 1.5 实现 Section Floor（最低保证）
-- [ ] 1.6 实现预算元数据记录
-- [ ] 1.7 将 AgentLoop 集成 ContextManager
-- [ ] 1.8 编写上下文管理测试
+- [x] 1.1 实现 TokenCounter（精确 token 计数，替代 len(text)//4）
+- [x] 1.2 定义 Section 预算配置（prefix/tools/memory/history/current_request）
+- [x] 1.3 实现 ContextManager（预算制 prompt 组装）
+- [x] 1.4 实现优先级裁剪（history → tool_results → memory → tools → prefix）
+- [x] 1.5 实现 Section Floor（最低保证）
+- [x] 1.6 实现预算元数据记录
+- [x] 1.7 将 AgentLoop 集成 ContextManager
+- [x] 1.8 编写上下文管理测试
 
 ### Context Ablation 实验
-- [ ] 1.9 实现 Context Ablation 实验框架
+- [x] 1.9 实现 Context Ablation 实验框架
   - 测试不同 history/note/request 长度组合
   - 对比 full vs no_context_reduction
   - 计算 compression_ratio、current_request_preserved_rate
-- [ ] 1.10 运行 Context Ablation 实验
-- [ ] 1.11 运行 benchmark 对比 Phase 0 基线
+- [x] 1.10 运行 Context Ablation 实验
+- [x] 1.11 运行 benchmark 对比 Phase 0 基线
 
 ### 验证指标
 - avg_prompt_compression_ratio（压缩比）
