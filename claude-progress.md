@@ -1,5 +1,67 @@
 # 进度日志
 
+## Session 16 — 2026-06-30 P2 分层记忆系统
+
+**功能**: P2 分层记忆系统
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `src/agent/memory/` 模块结构（7 个文件）
+   - `__init__.py` — 模块导出
+   - `working.py` — WorkingMemory（LRU 文件访问）
+   - `file_summaries.py` — FileSummaries（180 字符摘要 + freshness 校验）
+   - `episodic.py` — EpisodicNotes（12 条笔记 + 去重）
+   - `durable.py` — DurableMemory（跨 session 持久记忆）
+   - `retrieval.py` — Retrieval（标签 + 关键词检索）
+   - `renderer.py` — MemoryRenderer（紧凑格式）
+   - `manager.py` — MemoryManager（统一接口）
+
+2. ✅ 集成到 AgentLoop
+   - 在 `_build_system_prompt()` 中添加记忆渲染
+   - 在 `reset()` 中清空会话记忆
+   - 添加 `memory` 属性访问记忆管理器
+
+3. ✅ 编写测试（29 个测试全部通过）
+   - WorkingMemory: 5 个测试
+   - FileSummaries: 5 个测试
+   - EpisodicNotes: 6 个测试
+   - Retrieval: 4 个测试
+   - DurableMemory: 3 个测试
+   - MemoryManager: 6 个测试
+
+4. ✅ 实现 Memory Experiment 实验框架
+   - 测试 memory_on vs memory_off vs memory_irrelevant
+   - 12 个标准任务（fact_lookup、edit_dependency、history_reference）
+
+5. ✅ 运行实验和 benchmark
+   - Memory Experiment: 3 个配置，12 个任务
+   - Benchmark: 40% pass_rate（与 Phase 1 一致）
+
+### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| LRU 管理 recent_files | 最近访问的文件最可能再次使用 |
+| 文件摘要 180 字符 | 足够识别文件用途，不会占用太多 token |
+| 事件笔记限制 12 条 | 典型 session 的关键事件数量 |
+| 持久记忆用 markdown | 人类可读，便于手动编辑 |
+| 检索先看标签 | 标签是结构化信息，精确度高 |
+
+### 验证指标
+
+| 指标 | 目标 | 实际 | 状态 |
+|------|------|------|------|
+| repeated_reads | 越少越好 | 0 | ✅ |
+| correct_rate | 越高越好 | 100% | ✅（FakeModelClient） |
+| memory_hit_rate | 越高越好 | 50% | ⚠️（需要真实模型验证） |
+
+### 测试报告
+
+- `docs/test-reports/P2-memory-system.md`
+
+---
+
 ## Session 15 — 2026-06-30 修复 Benchmark tool_steps=0 问题
 
 **功能**: 修复 Benchmark 中 tool_steps 始终为 0 的问题

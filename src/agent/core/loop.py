@@ -40,6 +40,7 @@ from agent.core.types import (
 from agent.core.context import ToolUseContext, AbortController, FileReadState
 from agent.context.compressor import ContextCompressor
 from agent.context.manager import ContextManager, ContextMetadata
+from agent.memory.manager import MemoryManager
 from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger("agent.loop")
@@ -125,6 +126,9 @@ class AgentLoop:
         # 上下文管理器（预算制 prompt 组装）
         self._context_manager = ContextManager()
         self._last_context_metadata: ContextMetadata | None = None
+        # 记忆管理器
+        self._memory = MemoryManager()
+        self._memory.load()
         # 模型适配器（延迟导入，避免循环依赖）
         self._adapter: ModelAdapter
         if adapter is None:
@@ -326,6 +330,7 @@ class AgentLoop:
         self._total_tokens = 0
         self._abort_controller = AbortController()
         self._file_read_state = FileReadState()
+        self._memory.clear_session()
         logger.info("Agent loop reset")
 
     @property
@@ -374,6 +379,11 @@ class AgentLoop:
         self._abort_controller.abort()
         logger.info("Agent loop abort requested")
 
+    @property
+    def memory(self) -> MemoryManager:
+        """获取记忆管理器"""
+        return self._memory
+
     # ============================================================
     # 内部方法
     # ============================================================
@@ -405,7 +415,8 @@ class AgentLoop:
         组合:
         1. config.system_prompt（基础提示）
         2. config.append_system_prompt（追加提示）
-        3. 工具使用说明（动态生成）
+        3. 记忆渲染（工作记忆 + 文件摘要 + 事件笔记）
+        4. 工具使用说明（动态生成）
         """
         parts = []
 
@@ -414,6 +425,11 @@ class AgentLoop:
 
         if self._config.append_system_prompt:
             parts.append(self._config.append_system_prompt)
+
+        # 添加记忆信息
+        memory_output = self._memory.render()
+        if memory_output:
+            parts.append(memory_output)
 
         # 添加工具说明
         tools = self._registry.get_enabled_tools()

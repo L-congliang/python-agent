@@ -51,32 +51,32 @@
 - pass_rate: 40%（与 Phase 0 基线一致，未下降）
 - 全量测试: 521 passed, 3 skipped
 
-## Phase 2: 分层记忆系统
+## Phase 2: 分层记忆系统 ✅
 
 ### 核心实现
-- [ ] 2.1 创建 `src/agent/memory/` 模块结构
-- [ ] 2.2 实现 WorkingMemory（task_summary + recent_files LRU）
-- [ ] 2.3 实现 FileSummaries（摘要生成 + freshness 校验）
-- [ ] 2.4 实现 EpisodicNotes（带时间戳和标签的笔记）
-- [ ] 2.5 实现 Retrieval（关键词 + 标签匹配检索）
-- [ ] 2.6 实现记忆渲染（给模型看的紧凑格式）
-- [ ] 2.7 实现 DurableMemory（跨 session 持久记忆）
-- [ ] 2.8 实现晋升机制（工作记忆 → 持久记忆）
-- [ ] 2.9 将 AgentLoop 集成记忆系统
-- [ ] 2.10 编写记忆系统测试
+- [x] 2.1 创建 `src/agent/memory/` 模块结构
+- [x] 2.2 实现 WorkingMemory（task_summary + recent_files LRU）
+- [x] 2.3 实现 FileSummaries（摘要生成 + freshness 校验）
+- [x] 2.4 实现 EpisodicNotes（带时间戳和标签的笔记）
+- [x] 2.5 实现 Retrieval（关键词 + 标签匹配检索）
+- [x] 2.6 实现记忆渲染（给模型看的紧凑格式）
+- [x] 2.7 实现 DurableMemory（跨 session 持久记忆）
+- [x] 2.8 实现晋升机制（工作记忆 → 持久记忆）
+- [x] 2.9 将 AgentLoop 集成记忆系统
+- [x] 2.10 编写记忆系统测试
 
 ### Memory Experiment 实验
-- [ ] 2.11 实现 Memory Experiment 实验框架
+- [x] 2.11 实现 Memory Experiment 实验框架
   - 测试 memory_on vs memory_off vs memory_irrelevant
   - 记录 repeated_reads、correct_rate、memory_hit_rate
   - 12 个标准任务（fact_lookup、edit_dependency、history_reference）
-- [ ] 2.12 运行 Memory Experiment 实验
-- [ ] 2.13 运行 benchmark 对比 Phase 1
+- [x] 2.12 运行 Memory Experiment 实验
+- [x] 2.13 运行 benchmark 对比 Phase 1
 
 ### 验证指标
-- repeated_reads（重复读取次数，越少越好）
-- correct_rate（正确率）
-- memory_hit_rate（记忆命中率）
+- repeated_reads: 0（FakeModelClient，需要真实模型验证）
+- correct_rate: 100%（FakeModelClient，需要真实模型验证）
+- memory_hit_rate: 50%（FakeModelClient，需要真实模型验证）
 
 ## Phase 3: 工具鲁棒性
 

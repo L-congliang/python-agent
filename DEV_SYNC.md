@@ -10,7 +10,7 @@
 
 ## 最新状态
 
-- **当前功能**: 修复 Benchmark tool_steps=0 问题 — **已完成**
+- **当前功能**: P2 分层记忆系统 — **已完成**
 - **最后更新**: 2026-06-30
 - **最后地点**: 家
 - **当前所在地**: 家
@@ -28,6 +28,31 @@
 
 ## 工作日志
 
+### 2026-06-30 Session 16 — P2 分层记忆系统
+
+**做了什么:**
+- 实现 P2 分层记忆系统（7 个模块，29 个测试）
+- 核心组件：
+  - WorkingMemory（LRU 文件访问）
+  - FileSummaries（180 字符摘要 + freshness 校验）
+  - EpisodicNotes（12 条笔记 + 去重）
+  - DurableMemory（跨 session 持久记忆）
+  - Retrieval（标签 + 关键词检索）
+  - MemoryRenderer（紧凑格式）
+  - MemoryManager（统一接口）
+- 集成到 AgentLoop
+- 实现 Memory Experiment 实验框架
+
+**当前进度:**
+- P0 (评测框架 + 基础能力) — ✅ done
+- P1 (上下文工程) — ✅ done
+- P2 (分层记忆系统) — ✅ done
+- P3-P8 — pending
+
+**下次从这里开始:**
+- P3 工具鲁棒性（错误恢复 + 重复拦截 + 安全防护）
+- 或用真实模型验证记忆系统效果
+
 ### 2026-06-30 Session 15 — 修复 Benchmark tool_steps=0 问题
 
 **做了什么:**
@@ -42,12 +67,14 @@
 - Benchmark 结果：avg_tool_steps 从 0.0 提升到 2.0
 
 **当前进度:**
-- P0 (评测框架 + 基础能力) — done
-- P1-P8 — pending
+- P0 (评测框架 + 基础能力) — ✅ done
+- P1 (上下文工程) — ✅ done
+- P2 (分层记忆系统) — ✅ done
+- P3-P8 — pending
 
 **下次从这里开始:**
-- P1 上下文工程（TokenCounter + ContextManager 预算制组装）
-- 或继续优化 benchmark pass_rate（当前 40%）
+- P3 工具鲁棒性（错误恢复 + 重复拦截 + 安全防护）
+- 或用真实模型验证记忆系统效果
 
 ---
 
