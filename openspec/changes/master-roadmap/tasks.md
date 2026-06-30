@@ -73,10 +73,12 @@
 - [x] 2.12 运行 Memory Experiment 实验
 - [x] 2.13 运行 benchmark 对比 Phase 1
 
-### 验证指标
-- repeated_reads: 0（FakeModelClient，需要真实模型验证）
-- correct_rate: 100%（FakeModelClient，需要真实模型验证）
-- memory_hit_rate: 50%（FakeModelClient，需要真实模型验证）
+### 验证指标（真实模型验证）
+- repeated_reads: 0
+- correct_rate: 100%
+- memory_hit_rate: 63.16%（memory_irrelevant 配置）
+- 工具调用减少: 49%（20 vs 39 次）
+- 耗时减少: 61%（133s vs 340s）
 
 ## Phase 3: 工具鲁棒性
 
