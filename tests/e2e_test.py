@@ -3,7 +3,7 @@
 用户输入 → CLI → AgentLoop → mimo API → tool_use → 工具执行 → 结果注入 → 回复
 
 运行方式:
-    MIMO_API_KEY=xxx uv run python -m pytest tests/e2e_test.py -v -s
+    uv run python -m pytest tests/e2e_test.py -v -s
 """
 
 from __future__ import annotations
@@ -12,6 +12,10 @@ import os
 import sys
 
 import pytest
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv()
 
 from agent.core.model import MimoClient, ModelConfig
 from agent.core.loop import AgentLoop, LoopConfig
@@ -36,6 +40,7 @@ def client():
         base_url=os.environ.get(
             "MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/anthropic"
         ),
+        model=os.environ.get("MIMO_MODEL", "mimo-v2.5-pro"),
     )
     return MimoClient(config)
 

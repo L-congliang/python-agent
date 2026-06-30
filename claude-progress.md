@@ -1,5 +1,56 @@
 # 进度日志
 
+## Session 15 — 2026-06-30 修复 Benchmark tool_steps=0 问题
+
+**功能**: 修复 Benchmark 中 tool_steps 始终为 0 的问题
+**状态**: ✅ 已完成
+
+### 问题描述
+
+真实 API benchmark 结果显示 `avg_tool_steps: 0.0`，模型没有调用工具，只是直接用文本回答。
+
+### 根本原因
+
+1. **System Prompt 缺少工具调用格式说明** — 模型不知道如何输出工具调用
+2. **ToolCall 缺少 id 字段** — API 要求 `tool_result` 必须有 `tool_use_id`
+3. **loop.py 硬编码 id=""** — 覆盖了适配器生成的 id
+4. **.env 文件未加载** — e2e_test.py 和 benchmark 脚本没有加载 .env
+
+### 修复内容
+
+1. ✅ `tests/e2e_test.py` — 添加 `load_dotenv()` 加载 .env 文件
+2. ✅ `src/agent/core/model_adapter.py` — ToolCall 添加默认 id（uuid）
+3. ✅ `src/agent/core/loop.py` — 使用适配器生成的 id 而非空字符串
+4. ✅ `src/agent/evaluation/evaluator.py` — 改进 system prompt，告诉模型如何使用工具调用格式
+5. ✅ `benchmarks/run_benchmark.py` — 添加 `load_dotenv()` 加载 .env 文件
+
+### 验证结果
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| avg_tool_steps | 0.0 | **2.0** |
+| 有工具调用的任务 | 0/10 | **6/10** |
+| pass_rate | 40% | 40% |
+
+### Benchmark 结果（real-final）
+
+- Total tasks: 10
+- Passed: 4/10 (40.0%)
+- Avg attempts: 2.6
+- Avg tool steps: 2.0
+- By category:
+  - file-edit: 0/4 (0.0%)
+  - error-recovery: 1/3 (33.3%)
+  - code-search: 3/3 (100.0%)
+
+### 关键学习
+
+1. **System Prompt 必须明确告诉模型工具调用格式** — 不能假设模型知道如何调用工具
+2. **Anthropic API 要求 tool_use_id 匹配** — tool_result 必须有对应的 tool_use_id
+3. **适配器应该生成唯一 id** — 用于匹配工具调用和结果
+
+---
+
 ## Session 14 — 2026-06-23 F11 Glob 文件发现工具
 
 **功能**: F11 Glob 文件发现工具

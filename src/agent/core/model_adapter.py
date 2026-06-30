@@ -10,7 +10,8 @@ SDK 调用由 MimoClient 处理（包括流式），适配器从 content_blocks 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -20,6 +21,7 @@ class ToolCall:
 
     name: str
     arguments: dict[str, Any]
+    id: str = field(default_factory=lambda: f"toolu_{uuid.uuid4().hex[:24]}")
 
 
 @dataclass

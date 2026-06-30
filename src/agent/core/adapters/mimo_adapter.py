@@ -67,40 +67,94 @@ class MimoAdapter(ModelAdapter):
     def _parse_tool_calls(self, text: str) -> list[ToolCall]:
         """解析 mimo 输出中的工具调用。
 
-        mimo 使用 XML 格式：
-        <tool_call>
-        <tool_name>bash</tool_name>
-        <arguments>
-        <command>ls -la</command>
-        </arguments>
-        </tool_call>
+        支持三种格式：
+        1. 旧 XML：
+```
+
+```
+        2. 新 JSON：
+```
+
+```
+        3. Anthropic 风格：
+```
+
+```
         """
         tool_calls = []
+
+        # 尝试匹配 Anthropic 风格：<function_xxx>...</function_xxx>
+        # 优先尝试，因为这是 mimo 的主要输出格式
+        anthropic_pattern = r"<function_(\w+)>(.*?)</function_\1>"
+        anthropic_matches = re.findall(anthropic_pattern, text, re.DOTALL)
+        for func_name, params_text in anthropic_matches:
+            arguments = self._parse_anthropic_params(params_text)
+            tool_calls.append(ToolCall(name=func_name, arguments=arguments))
+        if tool_calls:
+            return tool_calls
+
+        # 尝试匹配 <tool_call>...</tool_call>
         pattern = r"<tool_call>(.*?)</tool_call>"
         matches = re.findall(pattern, text, re.DOTALL)
 
+        # 尝试匹配 <tool>...</tool>
+        if not matches:
+            pattern = r"<tool>(.*?)</tool>"
+            matches = re.findall(pattern, text, re.DOTALL)
+
         for match in matches:
             try:
-                # 提取 tool_name
-                name_match = re.search(r"<tool_name>(.*?)</tool_name>", match, re.DOTALL)
-                if not name_match:
+                content = match.strip()
+
+                # 处理嵌套：旧格式可能包含新格式的嵌套标签
+                inner_match = re.search(r"<tool>(.*?)</tool>", content, re.DOTALL)
+                if inner_match:
+                    content = inner_match.group(1).strip()
+
+                # 尝试 JSON 解析
+                if content.startswith("{"):
+                    data = json.loads(content)
+                    tool_name = data.get("name", "")
+                    arguments = data.get("args", data.get("arguments", {}))
+                    if tool_name:
+                        tool_calls.append(ToolCall(name=tool_name, arguments=arguments))
+                        continue
+
+                # XML 解析：<tool_name>xxx</tool_name>
+                name_match = re.search(r"<tool_name>(.*?)</tool_name>", content, re.DOTALL)
+                if name_match:
+                    tool_name = name_match.group(1).strip()
+                    args_match = re.search(r"<arguments>(.*?)</arguments>", content, re.DOTALL)
+                    arguments = self._parse_xml_arguments(args_match.group(1)) if args_match else {}
+                    tool_calls.append(ToolCall(name=tool_name, arguments=arguments))
                     continue
-                tool_name = name_match.group(1).strip()
 
-                # 提取 arguments
-                args_match = re.search(r"<arguments>(.*?)</arguments>", match, re.DOTALL)
-                if args_match:
-                    args_text = args_match.group(1).strip()
-                    arguments = self._parse_xml_arguments(args_text)
-                else:
-                    arguments = {}
-
-                tool_calls.append(ToolCall(name=tool_name, arguments=arguments))
             except Exception as e:
                 logger.warning("Failed to parse tool call: %s", e)
                 continue
 
         return tool_calls
+
+    def _parse_anthropic_params(self, params_text: str) -> dict[str, Any]:
+        """解析 Anthropic 风格的参数。
+
+        支持两种格式：
+        1. JSON: {"command": "ls", "timeout": 30000}
+        2. XML: <command>ls</command><timeout>30000</timeout>
+        """
+        params_text = params_text.strip()
+        if not params_text:
+            return {}
+
+        # 尝试 JSON 解析
+        if params_text.startswith("{"):
+            try:
+                return json.loads(params_text)
+            except json.JSONDecodeError:
+                pass
+
+        # 尝试 XML 解析
+        return self._parse_xml_arguments(params_text)
 
     def _parse_xml_arguments(self, xml_text: str) -> dict[str, Any]:
         """解析 XML 格式的参数。

@@ -1,0 +1,125 @@
+{
+  "run_id": "real-final",
+  "timestamp": "2026-06-30T20:07:53.155542",
+  "total_tasks": 10,
+  "passed": 4,
+  "pass_rate": 0.4,
+  "avg_attempts": 2.6,
+  "avg_tool_steps": 2.0,
+  "by_category": {
+    "file-edit": {
+      "passed": 0,
+      "total": 4,
+      "failure_categories": {
+        "unknown": 4
+      },
+      "rate": 0.0
+    },
+    "error-recovery": {
+      "passed": 1,
+      "total": 3,
+      "failure_categories": {
+        "unknown": 2
+      },
+      "rate": 0.3333333333333333
+    },
+    "code-search": {
+      "passed": 3,
+      "total": 3,
+      "failure_categories": {},
+      "rate": 1.0
+    }
+  },
+  "tasks": [
+    {
+      "id": "readme_update",
+      "passed": false,
+      "attempts": 2,
+      "tool_steps": 1,
+      "category": "file-edit",
+      "stop_reason": "final_answer_returned",
+      "error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nAssertionError"
+    },
+    {
+      "id": "readme_add_section",
+      "passed": false,
+      "attempts": 2,
+      "tool_steps": 1,
+      "category": "file-edit",
+      "stop_reason": "final_answer_returned",
+      "error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nAssertionError"
+    },
+    {
+      "id": "fix_parse_config",
+      "passed": false,
+      "attempts": 1,
+      "tool_steps": 0,
+      "category": "error-recovery",
+      "stop_reason": "final_answer_returned",
+      "error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\Liang\\AppData\\Local\\Temp\\bench_eak3whip\\broken.py\", line 11, in parse_config\n    key, value = line.split(\"=\")  # Bug: crashes on empty lines\n    ^^^^^^^^^^\nValueError: not enough values to unpack (expected 2, got 1)"
+    },
+    {
+      "id": "fix_negative_discount",
+      "passed": true,
+      "attempts": 1,
+      "tool_steps": 0,
+      "category": "error-recovery",
+      "stop_reason": "final_answer_returned",
+      "error": ""
+    },
+    {
+      "id": "add_multiply_function",
+      "passed": false,
+      "attempts": 4,
+      "tool_steps": 4,
+      "category": "file-edit",
+      "stop_reason": "final_answer_returned",
+      "error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nImportError: cannot import name 'power' from 'main' (C:\\Users\\Liang\\AppData\\Local\\Temp\\bench_1cj8_3ga\\main.py)"
+    },
+    {
+      "id": "find_function_usage",
+      "passed": true,
+      "attempts": 4,
+      "tool_steps": 4,
+      "category": "code-search",
+      "stop_reason": "final_answer_returned",
+      "error": ""
+    },
+    {
+      "id": "find_max_implementation",
+      "passed": true,
+      "attempts": 1,
+      "tool_steps": 0,
+      "category": "code-search",
+      "stop_reason": "final_answer_returned",
+      "error": ""
+    },
+    {
+      "id": "merge_lists_fix",
+      "passed": false,
+      "attempts": 6,
+      "tool_steps": 6,
+      "category": "error-recovery",
+      "stop_reason": "final_answer_returned",
+      "error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"C:\\Users\\Liang\\AppData\\Local\\Temp\\bench_w7masyme\\broken.py\", line 29, in merge_lists\n    return list(set(list_a + set(list_b)))  # Bug: set() loses order\n                    ~~~~~~~^~~~~~~~~~~~~\nTypeError: can only concatenate list (not \"set\") to list"
+    },
+    {
+      "id": "product_discount_task",
+      "passed": false,
+      "attempts": 4,
+      "tool_steps": 4,
+      "category": "file-edit",
+      "stop_reason": "final_answer_returned",
+      "error": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nAttributeError: 'Product' object has no attribute 'total_value'"
+    },
+    {
+      "id": "divide_by_zero_fix",
+      "passed": true,
+      "attempts": 1,
+      "tool_steps": 0,
+      "category": "code-search",
+      "stop_reason": "final_answer_returned",
+      "error": ""
+    }
+  ]
+}

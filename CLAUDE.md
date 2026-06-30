@@ -58,6 +58,40 @@
 - **用户**: 开发者（通过 pip install 使用）
 - **差异化**: 开源、可学习、使用国产模型
 
+### ⚠️ 项目北极星（不可偏离）
+
+**目的：** 通过这个项目真正搞懂生产级 Agent 开发，拿这段经历找实习。
+
+**硬性约束：**
+
+1. **不要改架构** — 跟着 Claude Code 的设计走，不自由发挥搞新架构。复刻真正的业务级代码。
+2. **不要方案描述** — 不要长篇大论的解释，要纯粹的、手把手的代码级指导。边写边讲。
+3. **不要做 Demo** — 每个功能要实打实地做出来，处理真实失败场景，不是调个 API 就完事。
+
+**必须搞懂的 6 个核心点：**
+
+| # | 核心点 | 面试能讲什么 |
+|---|--------|-------------|
+| 1 | 端到端意图识别 | 用户说了一句话，agent 怎么判断该做什么 |
+| 2 | MCP 协议实现 | 模型和工具之间的标准化通信协议 |
+| 3 | 多轮对话记忆管理 | 对话历史怎么压缩、怎么召回、上下文窗口怎么控制 |
+| 4 | 多 Agent 路由 | 多个 agent 时，谁来处理什么任务，怎么分发 |
+| 5 | 监控与评测 | agent 的表现怎么量化、怎么发现退化、怎么端到端评测 |
+| 6 | 工具调用兜底 | 工具出错怎么办、检索不全怎么补、模型幻觉怎么兜底 |
+
+**成功标准：** 每个核心点都能在面试中脱稿讲清楚——不只是"我做了什么"，还有"为什么这么做"、"踩过什么坑"、"试过什么方案不行"。
+
+### ⚠️ 教学优先（硬性规则）
+
+**每个 Phase 开始前，必须先确认用户理解该阶段的核心概念。**
+
+执行流程：
+1. **概念检查** — 问用户"这个概念你理解吗？"（如：什么是 Benchmark、什么是预算制上下文）
+2. **不理解就先讲** — 用通俗语言讲清楚概念、为什么需要、和现有代码的关系
+3. **确认理解后** — 再开始写代码
+
+**绝对禁止：** 用户没理解概念就直接写代码。用户说"不理解"时，不能跳过讲解直接开始实现。
+
 ## 技术栈
 
 - **模型**: mimo v2.5pro（小米），通过 Anthropic 兼容 API 调用
@@ -71,12 +105,50 @@
 
 ```
 src/agent/
-├── core/           # 核心模块（model.py 模型层, loop.py 主循环, types.py 类型）
-├── tools/          # 工具系统（base.py 协议, registry.py 注册, 各工具实现）
-├── permissions/    # 权限控制
-├── context/        # 上下文管理
-└── cli/            # 终端 UI（app.py）
+├── core/              # 核心模块
+│   ├── model.py       # MimoClient - mimo API 客户端
+│   ├── model_adapter.py # ModelAdapter 协议 + ToolCall
+│   ├── loop.py        # AgentLoop - 主循环
+│   ├── types.py       # 类型定义
+│   ├── context.py     # ToolUseContext, AbortController
+│   └── adapters/      # 模型适配器
+│       ├── mimo_adapter.py
+│       └── deepseek_adapter.py
+├── tools/             # 工具系统
+│   ├── base.py        # Tool Protocol + build_tool
+│   ├── registry.py    # ToolRegistry
+│   ├── bash.py        # Bash 工具
+│   ├── file_read.py   # 文件读取
+│   ├── file_write.py  # 文件写入
+│   ├── file_edit.py   # 文件编辑
+│   ├── grep.py        # 搜索工具
+│   └── glob.py        # 文件发现
+├── permissions/       # 权限控制
+│   └── checker.py     # PermissionChecker
+├── context/           # 上下文管理
+│   └── compressor.py  # ContextCompressor
+├── evaluation/        # 评测框架
+│   ├── benchmark.py   # BenchmarkTask
+│   ├── evaluator.py   # Evaluator
+│   ├── fake_client.py # FakeModelClient
+│   └── metrics.py     # Metrics + RegressionReport
+└── cli/               # 终端 UI
+    └── app.py         # AgentApp
 ```
+
+## 功能路线图（P0-P8）
+
+| Phase | 名称 | 状态 | 说明 |
+|-------|------|------|------|
+| P0 | 评测框架 + 基础能力 | ✅ done | 模型层、CLI、工具协议、主循环、7个工具、权限、压缩、评测 |
+| P1 | 上下文工程 | ⏳ pending | TokenCounter + ContextManager 预算制组装 |
+| P2 | 分层记忆系统 | ⏳ pending | WorkingMemory + FileSummaries + EpisodicNotes |
+| P3 | 工具鲁棒性 | ⏳ pending | 错误恢复 + 重复拦截 + 安全防护 |
+| P4 | 可观测性 | ⏳ pending | Trace 事件 + Checkpoint + Session 持久化 |
+| P5 | 多 Agent 路由 | ⏳ pending | AgentRegistry + 意图路由器 + 编排器 |
+| P6 | 意图识别与 Prompt 工程 | ⏳ pending | System Prompt 优化 + 意图分类 |
+| P7 | MCP 协议兼容 | ⏳ pending | MCP Server + Client |
+| P8 | 部署与交付 | ⏳ pending | 打包 + CLI 入口 + README |
 
 ## 验证命令
 
@@ -122,6 +194,14 @@ uv run make check
 - **验收标准**：怎么算完成
 
 开始做某个功能前，必须先读对应的 spec 文件。没有 spec 的功能不能开始实现。
+
+### Master Roadmap
+
+项目的完整路线图在 `openspec/changes/master-roadmap/` 目录下：
+- `proposal.md` — 为什么要做这些功能
+- `design.md` — 设计决策和 tradeoff
+
+`feature_list.json` 与 master-roadmap 对齐，按 Phase 组织（P0-P8）。
 
 ## 核心规则
 

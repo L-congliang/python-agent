@@ -1,124 +1,265 @@
 {
-  "features": [
+  "version": "2.0",
+  "description": "与 master-roadmap 对齐的功能列表，按 Phase 组织",
+  "phases": [
     {
-      "id": "F01",
-      "name": "模型层 - mimo API 客户端",
-      "file": "core/model.py",
-      "spec": "specs/F01-model.md",
+      "id": "P0",
+      "name": "评测框架 + 基础能力",
       "status": "done",
-      "description": "封装 mimo API，含重试、超时、错误处理、日志"
+      "features": [
+        {
+          "id": "P0.1",
+          "name": "模型层",
+          "file": "core/model.py, core/model_adapter.py, core/adapters/",
+          "status": "done",
+          "description": "MimoClient + ModelAdapter 抽象 + MimoAdapter 适配三种工具调用格式"
+        },
+        {
+          "id": "P0.2",
+          "name": "CLI 框架",
+          "file": "cli/app.py",
+          "status": "done",
+          "description": "rich + prompt_toolkit，Markdown 渲染、流式输出、工具面板"
+        },
+        {
+          "id": "P0.3",
+          "name": "Tool Protocol + 注册系统",
+          "file": "tools/base.py, tools/registry.py",
+          "status": "done",
+          "description": "Tool Protocol（15 属性）+ build_tool 工厂 + ToolRegistry"
+        },
+        {
+          "id": "P0.4",
+          "name": "Agent 主循环",
+          "file": "core/loop.py",
+          "status": "done",
+          "description": "流式调用 → 解析 tool_use → 执行工具 → 注入结果 → 循环"
+        },
+        {
+          "id": "P0.5",
+          "name": "工具集（7个）",
+          "file": "tools/bash.py, tools/file_read.py, tools/file_write.py, tools/file_edit.py, tools/grep.py, tools/glob.py",
+          "status": "done",
+          "description": "Bash、文件读写编辑、Grep、Glob"
+        },
+        {
+          "id": "P0.6",
+          "name": "权限检查",
+          "file": "permissions/checker.py",
+          "status": "done",
+          "description": "工具权限检查（sandbox/approve/deny）"
+        },
+        {
+          "id": "P0.7",
+          "name": "上下文压缩",
+          "file": "context/compressor.py",
+          "status": "done",
+          "description": "滑动窗口 + LLM 摘要压缩过长对话历史"
+        },
+        {
+          "id": "P0.8",
+          "name": "评测框架",
+          "file": "evaluation/",
+          "status": "done",
+          "description": "FakeModelClient + BenchmarkTask + Evaluator + metrics，10 个标准测试任务"
+        }
+      ]
     },
     {
-      "id": "F02",
-      "name": "CLI 框架 - 终端 UI",
-      "file": "cli/app.py",
-      "spec": "specs/F02-cli.md",
-      "status": "done",
-      "description": "rich + prompt_toolkit，Markdown 渲染、流式输出、工具面板"
-    },
-    {
-      "id": "F03",
-      "name": "Tool Protocol + 注册系统（对齐 Claude Code）",
-      "file": "tools/base.py, tools/registry.py, core/context.py",
-      "spec": "specs/F03-tool-protocol.md",
-      "status": "done",
-      "description": "Tool Protocol（15 属性）+ build_tool 工厂 + ToolUseContext + 权限决策 + ToolRegistry + validate_and_execute 流程"
-    },
-    {
-      "id": "F04",
-      "name": "Agent 主循环（对齐 Claude Code）",
-      "file": "core/loop.py",
-      "spec": "specs/F04-agent-loop.md",
-      "status": "done",
-      "description": "AgentLoop：流式调用→解析 tool_use→执行工具→注入结果→循环，含中断支持和轮次保护"
-    },
-    {
-      "id": "F05",
-      "name": "Bash 工具",
-      "file": "tools/bash.py",
-      "spec": "specs/F05-bash-tool.md",
-      "status": "done",
-      "description": "执行 shell 命令"
-    },
-    {
-      "id": "F06",
-      "name": "文件读取工具",
-      "file": "tools/file_read.py",
-      "spec": "specs/F06-file-read.md",
-      "status": "done",
-      "description": "读取文件内容（文本 + Notebook），支持 offset/limit、行号、编码检测、缓存"
-    },
-    {
-      "id": "F07",
-      "name": "文件写入工具",
-      "file": "tools/file_write.py, tools/file_edit.py",
-      "spec": "specs/F07-file-write.md",
-      "status": "done",
-      "description": "写入文件内容（Write + Edit），支持文本文件和 Jupyter Notebook"
-    },
-    {
-      "id": "F08",
-      "name": "搜索工具",
-      "file": "tools/grep.py",
-      "spec": "specs/F08-grep-tool.md",
-      "status": "done",
-      "description": "搜索文件内容（正则、文件过滤、路径指定、大小写控制、上下文显示）"
-    },
-    {
-      "id": "F09",
-      "name": "权限检查",
-      "file": "permissions/checker.py",
-      "spec": "specs/F09-permission-checker.md",
-      "status": "done",
-      "description": "检查工具是否有权限执行"
-    },
-    {
-      "id": "F10",
-      "name": "上下文压缩",
-      "file": "context/compressor.py",
-      "spec": "specs/F10-context-compressor.md",
-      "status": "done",
-      "description": "压缩过长的对话历史（滑动窗口 + LLM 摘要）"
-    },
-    {
-      "id": "F11",
-      "name": "Glob 文件查找",
-      "file": "tools/glob.py",
-      "spec": "specs/F11-glob.md",
-      "status": "done",
-      "description": "按模式匹配查找文件（**/*.py 等）"
-    },
-    {
-      "id": "F12",
-      "name": "Sub-agent 派生",
-      "file": "core/subagent.py",
-      "spec": "specs/F12-subagent.md",
+      "id": "P1",
+      "name": "上下文工程",
       "status": "pending",
-      "description": "主 Agent 派生子 Agent 并行执行任务"
+      "features": [
+        {
+          "id": "P1.1",
+          "name": "TokenCounter",
+          "file": "context/token_counter.py",
+          "status": "pending",
+          "description": "精确 token 计数，替代 len(text)//4"
+        },
+        {
+          "id": "P1.2",
+          "name": "ContextManager 预算制组装",
+          "file": "context/manager.py",
+          "status": "pending",
+          "description": "Section 预算配置 + 优先级裁剪 + Floor 最低保证 + 元数据记录"
+        },
+        {
+          "id": "P1.3",
+          "name": "AgentLoop 集成 ContextManager",
+          "file": "core/loop.py",
+          "status": "pending",
+          "description": "将预算制组装接入主循环，替代硬拼 messages"
+        }
+      ]
     },
     {
-      "id": "F13",
-      "name": "MCP 集成",
-      "file": "tools/mcp.py",
-      "spec": "specs/F13-mcp.md",
+      "id": "P2",
+      "name": "分层记忆系统",
       "status": "pending",
-      "description": "Model Context Protocol，连接外部工具服务"
+      "features": [
+        {
+          "id": "P2.1",
+          "name": "WorkingMemory + FileSummaries",
+          "file": "memory/working.py, memory/file_summaries.py",
+          "status": "pending",
+          "description": "task_summary + recent_files LRU + 文件摘要生成与 freshness 校验"
+        },
+        {
+          "id": "P2.2",
+          "name": "EpisodicNotes + Retrieval",
+          "file": "memory/episodic.py, memory/retrieval.py",
+          "status": "pending",
+          "description": "带时间戳和标签的笔记 + 关键词/标签匹配检索"
+        },
+        {
+          "id": "P2.3",
+          "name": "DurableMemory + 晋升机制",
+          "file": "memory/durable.py, memory/promotion.py",
+          "status": "pending",
+          "description": "跨 session 持久记忆 + 工作记忆 → 持久记忆晋升"
+        },
+        {
+          "id": "P2.4",
+          "name": "AgentLoop 集成记忆系统",
+          "file": "core/loop.py, memory/renderer.py",
+          "status": "pending",
+          "description": "记忆渲染（紧凑格式）+ 接入主循环"
+        }
+      ]
     },
     {
-      "id": "F14",
-      "name": "Session 持久化",
-      "file": "context/session.py",
-      "spec": "specs/F14-session.md",
+      "id": "P3",
+      "name": "工具鲁棒性",
       "status": "pending",
-      "description": "对话历史持久化，支持恢复和跨 session 记忆"
+      "features": [
+        {
+          "id": "P3.1",
+          "name": "错误恢复 + 重复拦截",
+          "file": "tools/error_handler.py",
+          "status": "pending",
+          "description": "错误信息注入历史 + 同工具同参数连续3次拦截 + 重试上限"
+        },
+        {
+          "id": "P3.2",
+          "name": "安全防护 + 超时",
+          "file": "tools/safety.py",
+          "status": "pending",
+          "description": "路径逃逸防护 + 工具调用超时保护"
+        },
+        {
+          "id": "P3.3",
+          "name": "TaskState 状态机",
+          "file": "core/task_state.py",
+          "status": "pending",
+          "description": "running/completed/stopped/failed 状态机 + AgentLoop 集成"
+        }
+      ]
     },
     {
-      "id": "F15",
-      "name": "Hooks 系统",
-      "file": "core/hooks.py",
-      "spec": "specs/F15-hooks.md",
+      "id": "P4",
+      "name": "可观测性",
       "status": "pending",
-      "description": "工具调用前后的回调机制（日志、权限确认、自定义逻辑）"
+      "features": [
+        {
+          "id": "P4.1",
+          "name": "Trace 事件系统",
+          "file": "observability/trace.py",
+          "status": "pending",
+          "description": "prompt_built/model_requested/tool_executed/run_finished 事件 + Run Report"
+        },
+        {
+          "id": "P4.2",
+          "name": "Checkpoint 系统",
+          "file": "observability/checkpoint.py",
+          "status": "pending",
+          "description": "每步快照 + freshness 检测"
+        },
+        {
+          "id": "P4.3",
+          "name": "Session + Run 持久化",
+          "file": "persistence/session.py, persistence/run_store.py",
+          "status": "pending",
+          "description": "会话持久化 + 运行工件存储 + 敏感信息脱敏 + Workspace 快照"
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "name": "多 Agent 路由",
+      "status": "pending",
+      "features": [
+        {
+          "id": "P5.1",
+          "name": "AgentRegistry + 意图路由器",
+          "file": "orchestration/registry.py, orchestration/router.py",
+          "status": "pending",
+          "description": "注册多个 agent + 用户意图 → capabilities 匹配"
+        },
+        {
+          "id": "P5.2",
+          "name": "编排器 + Sub-Agent",
+          "file": "orchestration/orchestrator.py, orchestration/sub_agent.py",
+          "status": "pending",
+          "description": "顺序/并行执行控制 + spawn 子 agent + agent 间通信"
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "name": "意图识别与 Prompt 工程",
+      "status": "pending",
+      "features": [
+        {
+          "id": "P6.1",
+          "name": "System Prompt + Tool Description 优化",
+          "file": "core/prompts.py",
+          "status": "pending",
+          "description": "结构化 system prompt + 工具描述精准化"
+        },
+        {
+          "id": "P6.2",
+          "name": "意图分类 + Plan Mode",
+          "file": "core/intent.py, core/plan_mode.py",
+          "status": "pending",
+          "description": "code-edit/code-search/question/chat 分类 + 先规划再执行"
+        }
+      ]
+    },
+    {
+      "id": "P7",
+      "name": "MCP 协议兼容",
+      "status": "pending",
+      "features": [
+        {
+          "id": "P7.1",
+          "name": "MCP Server + Client",
+          "file": "mcp/server.py, mcp/client.py",
+          "status": "pending",
+          "description": "stdio transport + JSON-RPC + 协议版本协商 + 内部工具→MCP 格式转换"
+        }
+      ]
+    },
+    {
+      "id": "P8",
+      "name": "部署与交付",
+      "status": "pending",
+      "features": [
+        {
+          "id": "P8.1",
+          "name": "打包 + CLI 入口",
+          "file": "pyproject.toml, __main__.py",
+          "status": "pending",
+          "description": "pyproject.toml 打包 + `agent` 命令入口 + 配置管理"
+        },
+        {
+          "id": "P8.2",
+          "name": "README + 最终评测",
+          "file": "README.md",
+          "status": "pending",
+          "description": "面向面试官的项目说明 + 最终 benchmark 完整指标"
+        }
+      ]
     }
   ]
 }

@@ -10,8 +10,8 @@
 
 ## 最新状态
 
-- **当前功能**: F11 Glob 文件发现工具 — **已完成**
-- **最后更新**: 2026-06-23
+- **当前功能**: 修复 Benchmark tool_steps=0 问题 — **已完成**
+- **最后更新**: 2026-06-30
 - **最后地点**: 家
 - **当前所在地**: 家
 
@@ -27,6 +27,29 @@
 ---
 
 ## 工作日志
+
+### 2026-06-30 Session 15 — 修复 Benchmark tool_steps=0 问题
+
+**做了什么:**
+- 修复 Benchmark 中 tool_steps 始终为 0 的问题
+- 根本原因：System Prompt 缺少工具调用格式说明，模型不知道如何调用工具
+- 修复内容：
+  1. `tests/e2e_test.py` — 添加 `load_dotenv()` 加载 .env 文件
+  2. `src/agent/core/model_adapter.py` — ToolCall 添加默认 id（uuid）
+  3. `src/agent/core/loop.py` — 使用适配器生成的 id 而非空字符串
+  4. `src/agent/evaluation/evaluator.py` — 改进 system prompt，告诉模型工具调用格式
+  5. `benchmarks/run_benchmark.py` — 添加 `load_dotenv()` 加载 .env 文件
+- Benchmark 结果：avg_tool_steps 从 0.0 提升到 2.0
+
+**当前进度:**
+- P0 (评测框架 + 基础能力) — done
+- P1-P8 — pending
+
+**下次从这里开始:**
+- P1 上下文工程（TokenCounter + ContextManager 预算制组装）
+- 或继续优化 benchmark pass_rate（当前 40%）
+
+---
 
 ### 2026-06-23 Session 14 — F11 Glob 文件发现工具
 

@@ -98,3 +98,7 @@ python -m pytest tests/ -x -v
 ## License
 
 MIT
+
+## Contributing
+
+Contributions are welcome! Please open an issue first.

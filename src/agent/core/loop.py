@@ -208,7 +208,7 @@ class AgentLoop:
 
             # 执行工具（转换适配器的 ToolCall 为内部的 ToolCall）
             internal_tool_calls = [
-                ToolCall(id="", name=tc.name, arguments=tc.arguments)
+                ToolCall(id=tc.id, name=tc.name, arguments=tc.arguments)
                 for tc in parsed.tool_calls
             ]
             tool_results = self._execute_tool_calls(internal_tool_calls)
@@ -297,7 +297,7 @@ class AgentLoop:
 
             # 执行工具（转换适配器的 ToolCall 为内部的 ToolCall）
             internal_tool_calls = [
-                ToolCall(id="", name=tc.name, arguments=tc.arguments)
+                ToolCall(id=tc.id, name=tc.name, arguments=tc.arguments)
                 for tc in parsed.tool_calls
             ]
             tool_results = self._execute_tool_calls(internal_tool_calls)

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "description": "Python Agent benchmark v1. Standard tasks for evaluating agent capabilities.",
+  "tasks": [
+    {
+      "id": "readme_update",
+      "prompt": "In README.md, replace the placeholder project description 'This is a placeholder project description.' with 'A production-grade CLI AI coding agent built with Python.'",
+      "fixture_repo": "benchmarks/fixtures/bench_readme",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "README.md contains the new description",
+      "verifier": "python3 -c \"from pathlib import Path; text = Path('README.md').read_text(encoding='utf-8'); assert 'production-grade CLI AI coding agent' in text\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "readme_add_section",
+      "prompt": "Add a new section '## Contributing' at the end of README.md with the content 'Contributions are welcome! Please open an issue first.'",
+      "fixture_repo": "benchmarks/fixtures/bench_readme",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "README.md contains Contributing section",
+      "verifier": "python3 -c \"from pathlib import Path; text = Path('README.md').read_text(encoding='utf-8'); assert '## Contributing' in text and 'Contributions are welcome' in text\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "fix_parse_config",
+      "prompt": "Fix the bug in broken.py: the parse_config function crashes on empty lines. Add a check to skip empty lines.",
+      "fixture_repo": "benchmarks/fixtures/bench_error",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 6,
+      "expected_artifact": "broken.py parse_config handles empty lines",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from broken import parse_config; result = parse_config('a=1\\n\\nb=2'); assert result == {'a': '1', 'b': '2'}\"",
+      "category": "error-recovery"
+    },
+    {
+      "id": "fix_negative_discount",
+      "prompt": "Fix the bug in broken.py: the calculate_discount function should handle negative discounts (which should increase the price). Add a validation to raise ValueError for negative discounts.",
+      "fixture_repo": "benchmarks/fixtures/bench_error",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 6,
+      "expected_artifact": "broken.py calculate_discount raises ValueError for negative discount",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from broken import calculate_discount; import math; result = calculate_discount(100.0, 20.0); assert math.isclose(result, 80.0, rel_tol=1e-9)\"",
+      "category": "error-recovery"
+    },
+    {
+      "id": "add_multiply_function",
+      "prompt": "Add a new function 'power(base: int, exponent: int) -> int' to main.py that returns base raised to the power of exponent. Use the ** operator.",
+      "fixture_repo": "benchmarks/fixtures/bench_python",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "main.py contains power function",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from main import power; assert power(2, 3) == 8; assert power(5, 0) == 1\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "find_function_usage",
+      "prompt": "In the fixtures/bench_search directory, find all files that contain the class 'User' and report the file paths.",
+      "fixture_repo": "benchmarks/fixtures/bench_search",
+      "allowed_tools": ["grep", "glob", "file_read"],
+      "step_budget": 4,
+      "expected_artifact": "Agent reports data.py contains User class",
+      "verifier": "python3 -c \"pass\"",
+      "category": "code-search"
+    },
+    {
+      "id": "find_max_implementation",
+      "prompt": "Read utils.py and explain what the find_max function does, including its error handling behavior.",
+      "fixture_repo": "benchmarks/fixtures/bench_python",
+      "allowed_tools": ["file_read"],
+      "step_budget": 3,
+      "expected_artifact": "Agent correctly describes find_max behavior",
+      "verifier": "python3 -c \"pass\"",
+      "category": "code-search"
+    },
+    {
+      "id": "merge_lists_fix",
+      "prompt": "Fix the bug in broken.py: the merge_lists function should preserve order and remove duplicates. Use a list with a seen set instead of converting to set.",
+      "fixture_repo": "benchmarks/fixtures/bench_error",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 6,
+      "expected_artifact": "broken.py merge_lists preserves order",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from broken import merge_lists; result = merge_lists(['a', 'b', 'c'], ['b', 'd']); assert result == ['a', 'b', 'c', 'd']\"",
+      "category": "error-recovery"
+    },
+    {
+      "id": "product_discount_task",
+      "prompt": "In data.py, add a method 'total_value(self) -> float' to the Product class that returns price multiplied by stock.",
+      "fixture_repo": "benchmarks/fixtures/bench_search",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "data.py Product class has total_value method",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from data import Product; p = Product('test', 10.0, 5); assert p.total_value() == 50.0\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "divide_by_zero_fix",
+      "prompt": "In main.py, the divide function raises ZeroDivisionError when b is zero. Add a test case for this in the function's docstring showing the expected behavior.",
+      "fixture_repo": "benchmarks/fixtures/bench_python",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "main.py divide docstring shows ZeroDivisionError example",
+      "verifier": "python3 -c \"from pathlib import Path; text = Path('main.py').read_text(encoding='utf-8'); assert 'ZeroDivisionError' in text\"",
+      "category": "code-search"
+    }
+  ]
+}
