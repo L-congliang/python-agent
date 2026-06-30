@@ -1,5 +1,6 @@
-## Phase 0: 评测框架
+## Phase 0: 评测框架 + 基础能力 ✅
 
+### 评测框架
 - [x] 0.1 创建 `src/agent/evaluation/` 模块结构
 - [x] 0.2 实现 FakeModelClient（脚本化输出、记录输入、输出耗尽处理）
 - [x] 0.3 实现 Benchmark 定义加载器（JSON 解析、格式验证、必需字段检查）
@@ -10,8 +11,23 @@
 - [x] 0.8 编写评测框架测试
 - [x] 0.9 运行 benchmark，输出基线数据
 
+### 基础能力（F01-F11）
+- [x] 模型层（MimoClient + ModelAdapter + MimoAdapter）
+- [x] CLI 框架（rich + prompt_toolkit）
+- [x] Tool Protocol + 注册系统
+- [x] Agent 主循环
+- [x] 工具集（Bash、文件读写编辑、Grep、Glob）
+- [x] 权限检查
+- [x] 上下文压缩
+
+### Benchmark 结果（基线）
+- pass_rate: 40%
+- avg_tool_steps: 2.0
+- avg_attempts: 2.6
+
 ## Phase 1: 上下文工程
 
+### 核心实现
 - [ ] 1.1 实现 TokenCounter（精确 token 计数，替代 len(text)//4）
 - [ ] 1.2 定义 Section 预算配置（prefix/tools/memory/history/current_request）
 - [ ] 1.3 实现 ContextManager（预算制 prompt 组装）
@@ -20,10 +36,23 @@
 - [ ] 1.6 实现预算元数据记录
 - [ ] 1.7 将 AgentLoop 集成 ContextManager
 - [ ] 1.8 编写上下文管理测试
-- [ ] 1.9 运行 benchmark 对比 Phase 0 基线
+
+### Context Ablation 实验
+- [ ] 1.9 实现 Context Ablation 实验框架
+  - 测试不同 history/note/request 长度组合
+  - 对比 full vs no_context_reduction
+  - 计算 compression_ratio、current_request_preserved_rate
+- [ ] 1.10 运行 Context Ablation 实验
+- [ ] 1.11 运行 benchmark 对比 Phase 0 基线
+
+### 验证指标
+- avg_prompt_compression_ratio（压缩比）
+- current_request_preserved_rate（当前请求保留率）
+- pass_rate 不能下降
 
 ## Phase 2: 分层记忆系统
 
+### 核心实现
 - [ ] 2.1 创建 `src/agent/memory/` 模块结构
 - [ ] 2.2 实现 WorkingMemory（task_summary + recent_files LRU）
 - [ ] 2.3 实现 FileSummaries（摘要生成 + freshness 校验）
@@ -34,10 +63,23 @@
 - [ ] 2.8 实现晋升机制（工作记忆 → 持久记忆）
 - [ ] 2.9 将 AgentLoop 集成记忆系统
 - [ ] 2.10 编写记忆系统测试
-- [ ] 2.11 运行 benchmark 对比 Phase 1
+
+### Memory Experiment 实验
+- [ ] 2.11 实现 Memory Experiment 实验框架
+  - 测试 memory_on vs memory_off vs memory_irrelevant
+  - 记录 repeated_reads、correct_rate、memory_hit_rate
+  - 12 个标准任务（fact_lookup、edit_dependency、history_reference）
+- [ ] 2.12 运行 Memory Experiment 实验
+- [ ] 2.13 运行 benchmark 对比 Phase 1
+
+### 验证指标
+- repeated_reads（重复读取次数，越少越好）
+- correct_rate（正确率）
+- memory_hit_rate（记忆命中率）
 
 ## Phase 3: 工具鲁棒性
 
+### 核心实现
 - [ ] 3.1 实现错误恢复策略（错误信息注入消息历史）
 - [ ] 3.2 实现重复调用拦截（同一工具同一参数连续 3 次 → 拦截）
 - [ ] 3.3 实现路径逃逸防护（文件路径不能跳出工作区）
@@ -46,10 +88,22 @@
 - [ ] 3.6 实现 TaskState 状态机（running/completed/stopped/failed）
 - [ ] 3.7 将 AgentLoop 集成 TaskState
 - [ ] 3.8 编写工具鲁棒性测试
-- [ ] 3.9 运行 benchmark 对比 Phase 2
+
+### Security Experiment 实验
+- [ ] 3.9 实现 Security Experiment 实验框架
+  - 10 个安全场景（path_escape、symlink_escape、search_escape、approval_denied、read_only_write、repeated_call 等）
+  - 记录 security_event_counts、tool_error_code_counts
+- [ ] 3.10 运行 Security Experiment 实验
+- [ ] 3.11 运行 benchmark 对比 Phase 2
+
+### 验证指标
+- security_event_counts（安全事件拦截次数）
+- tool_error_code_counts（工具错误码统计）
+- pass_rate 不能下降
 
 ## Phase 4: 可观测性
 
+### 核心实现
 - [ ] 4.1 创建 `src/agent/observability/` 模块结构
 - [ ] 4.2 实现 Trace 事件系统（prompt_built/model_requested/tool_executed/run_finished）
 - [ ] 4.3 实现 Run Report 生成（report.json）
@@ -61,7 +115,20 @@
 - [ ] 4.9 实现 Workspace 快照（git 分支、最近提交、项目文档）
 - [ ] 4.10 将 AgentLoop 集成 trace/checkpoint
 - [ ] 4.11 编写可观测性测试
-- [ ] 4.12 运行 benchmark 对比 Phase 3
+
+### Recovery Ablation 实验
+- [ ] 4.12 实现 Recovery Ablation 实验框架
+  - 10 个恢复场景（checkpoint_resume、partial_stale、workspace_mismatch、schema_mismatch、partial_success）
+  - 测试 resume_enabled vs resume_disabled
+  - 记录 resume_success_rate、stale_reanchor_rate、workspace_drift_detection_rate、resume_false_accept_rate
+- [ ] 4.13 运行 Recovery Ablation 实验
+- [ ] 4.14 运行 benchmark 对比 Phase 3
+
+### 验证指标
+- resume_success_rate（恢复成功率）
+- stale_reanchor_rate（过期重新锚定率）
+- workspace_drift_detection_rate（工作区漂移检测率）
+- resume_false_accept_rate（误接受率，越低越好）
 
 ## Phase 5: 多 Agent 路由
 
