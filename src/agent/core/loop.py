@@ -39,6 +39,7 @@ from agent.core.types import (
 )
 from agent.core.context import ToolUseContext, AbortController, FileReadState
 from agent.context.compressor import ContextCompressor
+from agent.context.manager import ContextManager, ContextMetadata
 from agent.tools.registry import ToolRegistry
 
 logger = logging.getLogger("agent.loop")
@@ -121,6 +122,9 @@ class AgentLoop:
         # Token 追踪
         self._total_tokens: int = 0
         self._compressor = ContextCompressor(client)
+        # 上下文管理器（预算制 prompt 组装）
+        self._context_manager = ContextManager()
+        self._last_context_metadata: ContextMetadata | None = None
         # 模型适配器（延迟导入，避免循环依赖）
         self._adapter: ModelAdapter
         if adapter is None:
