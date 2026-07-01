@@ -68,27 +68,27 @@
     {
       "id": "P1",
       "name": "上下文工程",
-      "status": "pending",
+      "status": "done",
       "features": [
         {
           "id": "P1.1",
           "name": "TokenCounter",
           "file": "context/token_counter.py",
-          "status": "pending",
+          "status": "done",
           "description": "精确 token 计数，替代 len(text)//4"
         },
         {
           "id": "P1.2",
           "name": "ContextManager 预算制组装",
           "file": "context/manager.py",
-          "status": "pending",
+          "status": "done",
           "description": "Section 预算配置 + 优先级裁剪 + Floor 最低保证 + 元数据记录"
         },
         {
           "id": "P1.3",
           "name": "AgentLoop 集成 ContextManager",
           "file": "core/loop.py",
-          "status": "pending",
+          "status": "done",
           "description": "将预算制组装接入主循环，替代硬拼 messages"
         }
       ]
@@ -96,34 +96,34 @@
     {
       "id": "P2",
       "name": "分层记忆系统",
-      "status": "pending",
+      "status": "done",
       "features": [
         {
           "id": "P2.1",
           "name": "WorkingMemory + FileSummaries",
           "file": "memory/working.py, memory/file_summaries.py",
-          "status": "pending",
+          "status": "done",
           "description": "task_summary + recent_files LRU + 文件摘要生成与 freshness 校验"
         },
         {
           "id": "P2.2",
           "name": "EpisodicNotes + Retrieval",
           "file": "memory/episodic.py, memory/retrieval.py",
-          "status": "pending",
+          "status": "done",
           "description": "带时间戳和标签的笔记 + 关键词/标签匹配检索"
         },
         {
           "id": "P2.3",
           "name": "DurableMemory + 晋升机制",
-          "file": "memory/durable.py, memory/promotion.py",
-          "status": "pending",
+          "file": "memory/durable.py, memory/manager.py",
+          "status": "done",
           "description": "跨 session 持久记忆 + 工作记忆 → 持久记忆晋升"
         },
         {
           "id": "P2.4",
           "name": "AgentLoop 集成记忆系统",
           "file": "core/loop.py, memory/renderer.py",
-          "status": "pending",
+          "status": "done",
           "description": "记忆渲染（紧凑格式）+ 接入主循环"
         }
       ]
@@ -131,27 +131,27 @@
     {
       "id": "P3",
       "name": "工具鲁棒性",
-      "status": "pending",
+      "status": "done",
       "features": [
         {
           "id": "P3.1",
           "name": "错误恢复 + 重复拦截",
-          "file": "tools/error_handler.py",
-          "status": "pending",
+          "file": "robustness/repeat_detector.py, robustness/retry_limiter.py",
+          "status": "done",
           "description": "错误信息注入历史 + 同工具同参数连续3次拦截 + 重试上限"
         },
         {
           "id": "P3.2",
           "name": "安全防护 + 超时",
-          "file": "tools/safety.py",
-          "status": "pending",
+          "file": "robustness/path_guard.py",
+          "status": "done",
           "description": "路径逃逸防护 + 工具调用超时保护"
         },
         {
           "id": "P3.3",
           "name": "TaskState 状态机",
-          "file": "core/task_state.py",
-          "status": "pending",
+          "file": "robustness/task_state.py",
+          "status": "done",
           "description": "running/completed/stopped/failed 状态机 + AgentLoop 集成"
         }
       ]

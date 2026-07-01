@@ -1,5 +1,46 @@
 # 进度日志
 
+## Session 17 — 2026-06-30 P3 工具鲁棒性
+
+**功能**: P3 工具鲁棒性
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `src/agent/robustness/` 模块结构（5 个文件）
+   - `__init__.py` — 模块导出
+   - `task_state.py` — TaskState 状态机
+   - `repeat_detector.py` — 重复调用检测
+   - `path_guard.py` — 路径逃逸防护
+   - `retry_limiter.py` — 重试上限
+
+2. ✅ 集成到 AgentLoop
+   - 添加 TaskState、RepeatDetector、PathGuard、RetryLimiter
+   - 在 `_execute_tool_calls()` 中添加鲁棒性检查
+   - 在 `run()` 和 `run_stream()` 中集成任务状态管理
+
+3. ✅ 编写测试（24 个测试全部通过）
+   - TestTaskState: 8 个测试
+   - TestRepeatDetector: 5 个测试
+   - TestPathGuard: 6 个测试
+   - TestRetryLimiter: 5 个测试
+
+4. ✅ 实现 Security Experiment 实验框架
+   - 4 个安全场景（path_escape、repeated_call、normal_read、normal_bash）
+
+5. ✅ 运行实验和 benchmark
+   - Security Experiment: 4 个场景，安全事件正确拦截
+   - Benchmark: 574 passed, 3 skipped（未下降）
+
+### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| 重复检测用 hash | 参数可能很大，hash 更高效 |
+| 路径防护用 resolve() | 解析符号链接和 ..，获取真实路径 |
+| 模型错误不自动恢复 | API 超时通常不可恢复，让调用者决定 |
+| 重试上限区分无效/错误 | 错误调用是正常的，不应强制停止 |
+
 ## Session 16 — 2026-06-30 P2 分层记忆系统
 
 **功能**: P2 分层记忆系统

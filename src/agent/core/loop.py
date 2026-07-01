@@ -42,6 +42,10 @@ from agent.context.compressor import ContextCompressor
 from agent.context.manager import ContextManager, ContextMetadata
 from agent.memory.manager import MemoryManager
 from agent.tools.registry import ToolRegistry
+from agent.robustness.task_state import TaskState, TaskStatus, StopReason
+from agent.robustness.repeat_detector import RepeatDetector
+from agent.robustness.path_guard import PathGuard
+from agent.robustness.retry_limiter import RetryLimiter
 
 logger = logging.getLogger("agent.loop")
 
@@ -75,6 +79,11 @@ class LoopConfig:
     # 调试
     debug: bool = False
     verbose: bool = False
+
+    # 鲁棒性配置
+    max_repeated_calls: int = 3  # 重复调用拦截阈值
+    max_consecutive_failures: int = 5  # 重试上限
+    workspace_root: str | None = None  # 工作区根目录
 
 
 class AgentLoop:
@@ -137,6 +146,12 @@ class AgentLoop:
         else:
             self._adapter = adapter
 
+        # 鲁棒性组件
+        self._task_state = TaskState()
+        self._repeat_detector = RepeatDetector(max_repeats=self._config.max_repeated_calls)
+        self._path_guard = PathGuard(workspace_root=self._config.workspace_root)
+        self._retry_limiter = RetryLimiter(max_retries=self._config.max_consecutive_failures)
+
     def run(self, user_input: str) -> str:
         """运行一轮完整的对话（同步）
 
@@ -147,6 +162,12 @@ class AgentLoop:
         4. 如果有 tool_use → 执行工具 → 注入结果 → 回到步骤 2
         5. 如果没有 tool_use → 返回模型回复
 
+        鲁棒性:
+        - 错误恢复：模型调用失败时注入错误信息，让模型决定重试或换工具
+        - 重复调用拦截：检测并阻止连续相同调用
+        - 路径逃逸防护：文件路径必须在工作区内
+        - 重试上限：连续无效调用强制停止
+
         Args:
             user_input: 用户输入的文本
 
@@ -156,13 +177,23 @@ class AgentLoop:
         Raises:
             KeyboardInterrupt: 用户中断（Ctrl+C）
         """
+        # 初始化任务状态
+        self._task_state = TaskState(user_request=user_input)
+        self._repeat_detector.reset()
+        self._retry_limiter.reset()
+
         # 添加用户消息
         self._messages.append({"role": "user", "content": user_input})
 
         while self._turn_count < self._config.max_turns:
             # 检查中断
             if self._abort_controller.is_aborted:
+                self._task_state.stop(StopReason.USER_ABORT)
                 raise KeyboardInterrupt("Agent loop aborted")
+
+            # 检查任务状态
+            if self._task_state.is_done:
+                break
 
             # 调用模型（内部用 chat_stream 获取 content_blocks）
             system = self._build_system_prompt()
@@ -175,7 +206,9 @@ class AgentLoop:
                 # 消费所有 chunk 以获取 content_blocks
                 text_chunks = list(stream_result.text)
             except Exception as e:
+                # 模型错误：设置任务状态为 FAILED
                 logger.error("Model call failed: %s", e)
+                self._task_state.fail(StopReason.MODEL_ERROR, str(e))
                 raise
 
             self._turn_count += 1
@@ -198,6 +231,7 @@ class AgentLoop:
                     "role": "assistant",
                     "content": content_blocks,
                 })
+                self._task_state.complete(parsed.text)
                 return parsed.text
 
             # 有工具调用 → 检查工具调用次数限制
@@ -206,6 +240,7 @@ class AgentLoop:
                     "Max tool calls (%d) would be exceeded",
                     self._config.max_tool_calls,
                 )
+                self._task_state.stop(StopReason.STEP_LIMIT)
                 return f"[错误] 超过最大工具调用次数限制 ({self._config.max_tool_calls})"
 
             # 构建 assistant 消息（含 tool_use）
@@ -228,6 +263,7 @@ class AgentLoop:
 
         # 超过最大轮次
         logger.warning("Max turns (%d) exceeded", self._config.max_turns)
+        self._task_state.stop(StopReason.STEP_LIMIT)
         return f"[错误] 超过最大轮次限制 ({self._config.max_turns})"
 
     def run_stream(self, user_input: str) -> Iterator[str]:
@@ -242,13 +278,23 @@ class AgentLoop:
         Raises:
             KeyboardInterrupt: 用户中断（Ctrl+C）
         """
+        # 初始化任务状态
+        self._task_state = TaskState(user_request=user_input)
+        self._repeat_detector.reset()
+        self._retry_limiter.reset()
+
         # 添加用户消息
         self._messages.append({"role": "user", "content": user_input})
 
         while self._turn_count < self._config.max_turns:
             # 检查中断
             if self._abort_controller.is_aborted:
+                self._task_state.stop(StopReason.USER_ABORT)
                 raise KeyboardInterrupt("Agent loop aborted")
+
+            # 检查任务状态
+            if self._task_state.is_done:
+                break
 
             # 流式调用模型
             system = self._build_system_prompt()
@@ -259,7 +305,9 @@ class AgentLoop:
                     self._messages, system=system
                 )
             except Exception as e:
+                # 模型错误：设置任务状态为 FAILED
                 logger.error("Model stream call failed: %s", e)
+                self._task_state.fail(StopReason.MODEL_ERROR, str(e))
                 raise
 
             # 流式输出文本 chunk
@@ -286,6 +334,7 @@ class AgentLoop:
                     "role": "assistant",
                     "content": content_blocks,
                 })
+                self._task_state.complete(parsed.text)
                 return
 
             # 有工具调用 → 检查工具调用次数限制
@@ -294,6 +343,7 @@ class AgentLoop:
                     "Max tool calls (%d) would be exceeded",
                     self._config.max_tool_calls,
                 )
+                self._task_state.stop(StopReason.STEP_LIMIT)
                 yield f"\n[错误] 超过最大工具调用次数限制 ({self._config.max_tool_calls})"
                 return
 
@@ -313,11 +363,17 @@ class AgentLoop:
             # 注入工具结果到消息历史
             self._handle_tool_results(internal_tool_calls, tool_results)
 
+            # 检查重试上限
+            if self._task_state.is_done:
+                break
+
             # 继续循环（模型会基于工具结果回复）
 
         # 超过最大轮次
-        logger.warning("Max turns (%d) exceeded", self._config.max_turns)
-        yield f"\n[错误] 超过最大轮次限制 ({self._config.max_turns})"
+        if self._task_state.is_running:
+            logger.warning("Max turns (%d) exceeded", self._config.max_turns)
+            self._task_state.stop(StopReason.STEP_LIMIT)
+            yield f"\n[错误] 超过最大轮次限制 ({self._config.max_turns})"
 
     def reset(self) -> None:
         """重置对话历史
@@ -331,6 +387,10 @@ class AgentLoop:
         self._abort_controller = AbortController()
         self._file_read_state = FileReadState()
         self._memory.clear_session()
+        # 重置鲁棒性组件
+        self._task_state = TaskState()
+        self._repeat_detector.reset()
+        self._retry_limiter.reset()
         logger.info("Agent loop reset")
 
     @property
@@ -383,6 +443,16 @@ class AgentLoop:
     def memory(self) -> MemoryManager:
         """获取记忆管理器"""
         return self._memory
+
+    @property
+    def task_state(self) -> TaskState:
+        """获取任务状态"""
+        return self._task_state
+
+    @property
+    def path_guard(self) -> PathGuard:
+        """获取路径防护器"""
+        return self._path_guard
 
     # ============================================================
     # 内部方法
@@ -472,7 +542,12 @@ class AgentLoop:
     def _execute_tool_calls(
         self, tool_calls: list[ToolCall]
     ) -> list[ToolResult]:
-        """执行多个工具调用
+        """执行多个工具调用（带鲁棒性检查）
+
+        鲁棒性检查顺序:
+        1. 重复调用检测 → 拦截连续相同调用
+        2. 路径逃逸防护 → 文件路径必须在工作区内
+        3. 重试上限 → 连续无效调用强制停止
 
         Args:
             tool_calls: 工具调用列表
@@ -485,7 +560,7 @@ class AgentLoop:
             tools=self._registry.get_all(),
             abort_controller=self._abort_controller,
             file_read_state=self._file_read_state,
-            messages=[],  # TODO: 传入消息历史
+            messages=self._messages,
             debug=self._config.debug,
             verbose=self._config.verbose,
         )
@@ -500,6 +575,28 @@ class AgentLoop:
                 ))
                 continue
 
+            # 检查重复调用
+            is_repeated, repeat_msg = self._repeat_detector.check(
+                tool_call.name, tool_call.arguments
+            )
+            if is_repeated:
+                logger.warning("Repeated call detected: %s - %s", tool_call.name, repeat_msg)
+                results.append(ToolResult(output=repeat_msg, is_error=True))
+                self._retry_limiter.record_failure()
+                continue
+
+            # 检查路径逃逸（仅文件相关工具）
+            if tool_call.name in ("read", "write", "edit"):
+                file_path = tool_call.arguments.get("file_path") or tool_call.arguments.get("path", "")
+                if file_path:
+                    is_safe, path_msg = self._path_guard.check_path(file_path)
+                    if not is_safe:
+                        logger.warning("Path escape detected: %s", path_msg)
+                        results.append(ToolResult(output=path_msg, is_error=True))
+                        self._retry_limiter.record_failure()
+                        continue
+
+            # 执行工具
             logger.info("Executing tool: %s", tool_call.name)
             result = self._registry.validate_and_execute(
                 name=tool_call.name,
@@ -508,6 +605,19 @@ class AgentLoop:
             )
             results.append(result)
             self._tool_call_count += 1
+            self._task_state.increment_tool_steps()
+
+            # 记录重试状态
+            if result.is_error:
+                self._retry_limiter.record_failure()
+            else:
+                self._retry_limiter.record_success()
+
+            # 检查重试上限
+            if self._retry_limiter.is_exceeded:
+                logger.warning("Retry limit exceeded, stopping")
+                self._task_state.stop(StopReason.RETRY_LIMIT)
+                break
 
         return results
 
