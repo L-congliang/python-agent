@@ -108,31 +108,36 @@
 ## Phase 4: 可观测性
 
 ### 核心实现
-- [ ] 4.1 创建 `src/agent/observability/` 模块结构
-- [ ] 4.2 实现 Trace 事件系统（prompt_built/model_requested/tool_executed/run_finished）
-- [ ] 4.3 实现 Run Report 生成（report.json）
-- [ ] 4.4 实现 Checkpoint 系统（每步快照 + freshness 检测）
-- [ ] 4.5 创建 `src/agent/persistence/` 模块结构
-- [ ] 4.6 实现 SessionStore（会话持久化到 .agent/sessions/）
-- [ ] 4.7 实现 RunStore（运行工件存储到 .agent/runs/）
-- [ ] 4.8 实现敏感信息脱敏（API key、token 等自动脱敏）
-- [ ] 4.9 实现 Workspace 快照（git 分支、最近提交、项目文档）
-- [ ] 4.10 将 AgentLoop 集成 trace/checkpoint
+- [x] 4.1 创建 `src/agent/observability/` 模块结构
+- [x] 4.2 实现 Trace 事件系统（prompt_built/model_requested/tool_executed/run_finished）
+- [x] 4.3 实现 Run Report 生成（report.json）
+- [x] 4.4 实现 Checkpoint 系统（每步快照 + freshness 检测）
+- [x] 4.5 创建 `src/agent/persistence/` 模块结构
+- [x] 4.6 实现 SessionStore（会话持久化到 .agent/sessions/）
+- [x] 4.7 实现 RunStore（运行工件存储到 .agent/runs/）
+- [x] 4.8 实现敏感信息脱敏（API key、token 等自动脱敏）
+- [x] 4.9 实现 Workspace 快照（git 分支、最近提交、项目文档）
+- [x] 4.10 将 AgentLoop 集成 trace/checkpoint
 - [ ] 4.11 编写可观测性测试
 
 ### Recovery Ablation 实验
-- [ ] 4.12 实现 Recovery Ablation 实验框架
+- [x] 4.12 实现 Recovery Ablation 实验框架
   - 10 个恢复场景（checkpoint_resume、partial_stale、workspace_mismatch、schema_mismatch、partial_success）
   - 测试 resume_enabled vs resume_disabled
   - 记录 resume_success_rate、stale_reanchor_rate、workspace_drift_detection_rate、resume_false_accept_rate
-- [ ] 4.13 运行 Recovery Ablation 实验
-- [ ] 4.14 运行 benchmark 对比 Phase 3
+- [x] 4.13 运行 Recovery Ablation 实验
+- [x] 4.14 运行 benchmark 对比 Phase 3
 
-### 验证指标
-- resume_success_rate（恢复成功率）
-- stale_reanchor_rate（过期重新锚定率）
-- workspace_drift_detection_rate（工作区漂移检测率）
-- resume_false_accept_rate（误接受率，越低越好）
+### 验证指标（Recovery Ablation 结果）
+- resume_success_rate: 40.00%
+- stale_reanchor_rate: 0.00%
+- workspace_drift_detection_rate: 0.00%
+- resume_false_accept_rate: 0.00%
+- enabled_success_rate: 40.00%
+- disabled_success_rate: 10.00%
+- pass_rate: 4/10 (40.0%)
+- 全量测试: 605 passed, 3 skipped
+- 测试报告: `docs/test-reports/P4-recovery-ablation.md`
 
 ## Phase 5: 多 Agent 路由
 

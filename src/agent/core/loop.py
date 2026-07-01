@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from agent.core.model import MimoClient
@@ -46,6 +47,11 @@ from agent.robustness.task_state import TaskState, TaskStatus, StopReason
 from agent.robustness.repeat_detector import RepeatDetector
 from agent.robustness.path_guard import PathGuard
 from agent.robustness.retry_limiter import RetryLimiter
+from agent.observability.trace import TraceEmitter
+from agent.observability.reporter import RunReporter
+from agent.observability.checkpoint import CheckpointManager
+from agent.observability.workspace import WorkspaceSnapshot
+from agent.persistence.run_store import RunStore
 
 logger = logging.getLogger("agent.loop")
 
@@ -84,6 +90,11 @@ class LoopConfig:
     max_repeated_calls: int = 3  # 重复调用拦截阈值
     max_consecutive_failures: int = 5  # 重试上限
     workspace_root: str | None = None  # 工作区根目录
+
+    # 可观测性配置
+    enable_trace: bool = True  # 是否启用 trace
+    enable_checkpoint: bool = True  # 是否启用 checkpoint
+    checkpoint_interval: int = 1  # 每 N 个工具调用创建 checkpoint
 
 
 class AgentLoop:
@@ -152,6 +163,26 @@ class AgentLoop:
         self._path_guard = PathGuard(workspace_root=self._config.workspace_root)
         self._retry_limiter = RetryLimiter(max_retries=self._config.max_consecutive_failures)
 
+        # 可观测性组件
+        self._run_store = RunStore(Path(".agent/runs"))
+        self._run_dir: Path | None = None
+        self._trace: TraceEmitter | None = None
+        self._reporter: RunReporter | None = None
+        self._checkpoint_mgr: CheckpointManager | None = None
+        self._workspace_snapshot: WorkspaceSnapshot | None = None
+
+        if self._config.enable_trace:
+            self._run_dir = self._run_store.create_run_dir()
+            self._trace = TraceEmitter(self._run_dir)
+            self._reporter = RunReporter(self._run_dir, self._trace.run_id)
+
+        if self._config.enable_checkpoint:
+            checkpoint_dir = Path(".agent/checkpoints")
+            self._checkpoint_mgr = CheckpointManager(checkpoint_dir)
+
+        if self._config.workspace_root:
+            self._workspace_snapshot = WorkspaceSnapshot(Path(self._config.workspace_root))
+
     def run(self, user_input: str) -> str:
         """运行一轮完整的对话（同步）
 
@@ -182,6 +213,31 @@ class AgentLoop:
         self._repeat_detector.reset()
         self._retry_limiter.reset()
 
+        # 重新打开 trace（如果已关闭）
+        if self._config.enable_trace and self._trace and self._trace._file.closed:
+            self._run_dir = self._run_store.create_run_dir()
+            self._trace = TraceEmitter(self._run_dir)
+            self._reporter = RunReporter(self._run_dir, self._trace.run_id)
+
+        # 发射 run_started 事件
+        if self._trace:
+            self._trace.emit("run_started", {
+                "user_request": user_input,
+                "config": {
+                    "model": self._config.model,
+                    "max_turns": self._config.max_turns,
+                    "max_tool_calls": self._config.max_tool_calls,
+                    "context_window": self._config.context_window,
+                },
+            })
+            self._reporter.record_start(user_request=user_input)
+
+        # 捕获工作区快照
+        if self._workspace_snapshot:
+            workspace_info = self._workspace_snapshot.capture()
+            if self._trace:
+                self._trace.emit("workspace_snapshot", workspace_info)
+
         # 添加用户消息
         self._messages.append({"role": "user", "content": user_input})
 
@@ -199,6 +255,14 @@ class AgentLoop:
             system = self._build_system_prompt()
             logger.info("Turn %d: calling model", self._turn_count + 1)
 
+            # 发射 model_requested 事件
+            if self._trace:
+                self._trace.emit("model_requested", {
+                    "turn": self._turn_count + 1,
+                    "messages_count": len(self._messages),
+                    "system_prompt_tokens": len(system) // 4,  # 粗略估算
+                })
+
             try:
                 stream_result = self._client.chat_stream(
                     self._messages, system=system
@@ -208,15 +272,28 @@ class AgentLoop:
             except Exception as e:
                 # 模型错误：设置任务状态为 FAILED
                 logger.error("Model call failed: %s", e)
+                if self._trace:
+                    self._trace.emit("error", {
+                        "type": "model_error",
+                        "exception": type(e).__name__,
+                        "message": str(e),
+                    })
                 self._task_state.fail(StopReason.MODEL_ERROR, str(e))
                 raise
 
             self._turn_count += 1
+            if self._reporter:
+                self._reporter.record_turn()
 
             # 累加 token 使用量
             if stream_result.usage:
                 self._total_tokens += stream_result.usage.get("input_tokens", 0)
                 logger.debug("Token count: %d (+%d input)", self._total_tokens, stream_result.usage.get("input_tokens", 0))
+                if self._reporter:
+                    self._reporter.record_tokens(
+                        stream_result.usage.get("input_tokens", 0),
+                        stream_result.usage.get("output_tokens", 0),
+                    )
 
             # 检查是否需要压缩
             self._check_compaction()
@@ -225,6 +302,15 @@ class AgentLoop:
             content_blocks = stream_result.content_blocks
             parsed = self._adapter.parse_response(content_blocks)
 
+            # 发射 model_responded 事件
+            if self._trace:
+                self._trace.emit("model_responded", {
+                    "turn": self._turn_count,
+                    "usage": stream_result.usage or {},
+                    "tool_calls_count": len(parsed.tool_calls),
+                    "text_preview": parsed.text[:100] if parsed.text else None,
+                })
+
             # 没有工具调用 → 最终回复
             if not parsed.tool_calls:
                 self._messages.append({
@@ -232,6 +318,25 @@ class AgentLoop:
                     "content": content_blocks,
                 })
                 self._task_state.complete(parsed.text)
+
+                # 发射 run_finished 事件
+                if self._trace:
+                    self._trace.emit("run_finished", {
+                        "status": "completed",
+                        "stop_reason": "normal",
+                        "total_turns": self._turn_count,
+                        "total_tool_calls": self._tool_call_count,
+                        "total_tokens_used": self._total_tokens,
+                        "final_answer_preview": parsed.text[:200] if parsed.text else None,
+                    })
+                    self._trace.close()
+                if self._reporter:
+                    self._reporter.record_finish(
+                        status="completed",
+                        final_answer=parsed.text,
+                        stop_reason="normal",
+                    )
+
                 return parsed.text
 
             # 有工具调用 → 检查工具调用次数限制
@@ -264,6 +369,23 @@ class AgentLoop:
         # 超过最大轮次
         logger.warning("Max turns (%d) exceeded", self._config.max_turns)
         self._task_state.stop(StopReason.STEP_LIMIT)
+
+        # 发射 run_finished 事件
+        if self._trace:
+            self._trace.emit("run_finished", {
+                "status": "stopped",
+                "stop_reason": "max_turns_exceeded",
+                "total_turns": self._turn_count,
+                "total_tool_calls": self._tool_call_count,
+                "total_tokens_used": self._total_tokens,
+            })
+            self._trace.close()
+        if self._reporter:
+            self._reporter.record_finish(
+                status="stopped",
+                stop_reason="max_turns_exceeded",
+            )
+
         return f"[错误] 超过最大轮次限制 ({self._config.max_turns})"
 
     def run_stream(self, user_input: str) -> Iterator[str]:
@@ -555,6 +677,8 @@ class AgentLoop:
         Returns:
             工具执行结果列表（与 tool_calls 一一对应）
         """
+        import time
+
         context = ToolUseContext(
             model=self._config.model,
             tools=self._registry.get_all(),
@@ -598,14 +722,59 @@ class AgentLoop:
 
             # 执行工具
             logger.info("Executing tool: %s", tool_call.name)
+            start_time = time.time()
             result = self._registry.validate_and_execute(
                 name=tool_call.name,
                 arguments=tool_call.arguments,
                 context=context,
             )
+            duration_ms = int((time.time() - start_time) * 1000)
             results.append(result)
             self._tool_call_count += 1
             self._task_state.increment_tool_steps()
+
+            # 发射 tool_executed 事件
+            if self._trace:
+                self._trace.emit("tool_executed", {
+                    "turn": self._turn_count,
+                    "tool_name": tool_call.name,
+                    "tool_id": tool_call.id,
+                    "input": tool_call.arguments,
+                    "output_preview": str(result.output)[:200] if result.output else None,
+                    "duration_ms": duration_ms,
+                    "is_error": result.is_error,
+                })
+
+            # 记录到 reporter
+            if self._reporter:
+                self._reporter.record_tool_call(
+                    tool_name=tool_call.name,
+                    tool_args=tool_call.arguments,
+                    duration_ms=duration_ms,
+                    is_error=result.is_error,
+                )
+
+            # 追踪文件（用于 checkpoint）
+            if self._checkpoint_mgr and tool_call.name in ("read", "write", "edit"):
+                file_path = tool_call.arguments.get("file_path") or tool_call.arguments.get("path", "")
+                if file_path:
+                    self._checkpoint_mgr.track_file(file_path, tool_call.name)
+
+            # 创建 checkpoint
+            if self._checkpoint_mgr and self._tool_call_count % self._config.checkpoint_interval == 0:
+                checkpoint = self._checkpoint_mgr.create(
+                    goal=self._task_state.user_request or "",
+                    completed_steps=[f"已执行 {self._task_state.tool_steps} 个工具调用"],
+                    next_step="继续执行",
+                    run_id=self._trace.run_id if self._trace else None,
+                    messages=self._messages.copy(),
+                )
+                if self._trace:
+                    self._trace.emit("checkpoint_created", {
+                        "checkpoint_id": checkpoint.checkpoint_id,
+                        "goal": checkpoint.goal,
+                        "tracked_files_count": len(checkpoint.tracked_files),
+                    })
 
             # 记录重试状态
             if result.is_error:

@@ -10,8 +10,8 @@
 
 ## 最新状态
 
-- **当前功能**: P3 工具鲁棒性 — **已完成**
-- **最后更新**: 2026-06-30
+- **当前功能**: P4 可观测性 — **已完成**
+- **最后更新**: 2026-07-01
 - **最后地点**: 家
 - **当前所在地**: 家
 
@@ -27,6 +27,40 @@
 ---
 
 ## 工作日志
+
+### 2026-07-01 Session 18 — P4 可观测性
+
+**做了什么:**
+- 实现 P4 可观测性（8 个模块，39 个测试）
+- 核心组件：
+  - TraceEmitter（事件发射器，JSONL 格式）
+  - RunReporter（运行报告生成）
+  - CheckpointManager（断点续传 + freshness 检测）
+  - Redactor（敏感信息脱敏）
+  - WorkspaceSnapshot（工作区快照）
+  - SessionStore（会话持久化）
+  - RunStore（运行工件存储）
+  - RecoveryExperiment（Recovery Ablation 实验）
+- 集成到 AgentLoop
+- 实现 Recovery Ablation 实验框架（10 个场景）
+
+**当前进度:**
+- P0 (评测框架 + 基础能力) — ✅ done
+- P1 (上下文工程) — ✅ done
+- P2 (分层记忆系统) — ✅ done（已通过真实模型验证）
+- P3 (工具鲁棒性) — ✅ done
+- P4 (可观测性) — ✅ done
+- P5-P8 — pending
+
+**P4 验证结果：**
+- Recovery Ablation: resume_success_rate = 40%, enabled_success_rate = 40%, disabled_success_rate = 10%
+- Benchmark: 605 passed, 3 skipped（未下降）
+- pass_rate: 40%（与 Phase 3 一致）
+
+**下次从这里开始:**
+- P5 多 Agent 路由（AgentRegistry + 意图路由器 + 编排器）
+
+---
 
 ### 2026-06-30 Session 17 — P3 工具鲁棒性
 
@@ -45,7 +79,8 @@
 - P1 (上下文工程) — ✅ done
 - P2 (分层记忆系统) — ✅ done（已通过真实模型验证）
 - P3 (工具鲁棒性) — ✅ done
-- P4-P8 — pending
+- P4 (可观测性) — ✅ done
+- P5-P8 — pending
 
 ### 2026-06-30 Session 16 — P2 分层记忆系统
 

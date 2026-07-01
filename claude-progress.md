@@ -1,5 +1,99 @@
 # 进度日志
 
+## Session 18 — 2026-07-01 P4 可观测性
+
+**功能**: P4 可观测性
+**状态**: ✅ 已完成
+
+### 完成的工作
+
+1. ✅ 创建 `src/agent/observability/` 模块结构（5 个文件）
+   - `__init__.py` — 模块导出
+   - `trace.py` — TraceEmitter 事件发射器
+   - `reporter.py` — RunReporter 运行报告
+   - `checkpoint.py` — CheckpointManager 断点续传
+   - `redactor.py` — Redactor 敏感信息脱敏
+   - `workspace.py` — WorkspaceSnapshot 工作区快照
+
+2. ✅ 创建 `src/agent/persistence/` 模块结构（3 个文件）
+   - `__init__.py` — 模块导出
+   - `session_store.py` — SessionStore 会话持久化
+   - `run_store.py` — RunStore 运行工件存储
+
+3. ✅ 集成到 AgentLoop
+   - 添加 TraceEmitter、RunReporter、CheckpointManager
+   - 在 `run()` 中发射 trace 事件（run_started、model_requested、tool_executed、run_finished）
+   - 在 `_execute_tool_calls()` 中创建 checkpoint
+   - 添加 LoopConfig 配置选项（enable_trace、enable_checkpoint、checkpoint_interval）
+
+4. ✅ 编写测试（39 个测试全部通过）
+   - TestTraceEmitter: 7 个测试
+   - TestRunReporter: 5 个测试
+   - TestRedactor: 6 个测试
+   - TestCheckpointManager: 5 个测试
+   - TestWorkspaceSnapshot: 2 个测试
+   - TestSessionStore: 4 个测试
+   - TestRunStore: 3 个测试
+   - TestRecoveryExperiment: 8 个测试
+
+5. ✅ 实现 Recovery Ablation 实验框架
+   - 10 个恢复场景（checkpoint_resume、partial_stale、workspace_mismatch、schema_mismatch、partial_success 等）
+   - 测试 resume_enabled vs resume_disabled 两种配置
+
+6. ✅ 运行实验和 benchmark
+   - Recovery Ablation: 10 个场景
+     - resume_success_rate: 40.00%
+     - enabled_success_rate: 40.00%
+     - disabled_success_rate: 10.00%
+   - Benchmark: 605 passed, 3 skipped（未下降）
+   - pass_rate: 40%（与 Phase 3 一致）
+
+### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| JSONL 而不是 JSON | 每行独立，追加写入，中途崩溃已有数据不丢 |
+| hash + mtime 双重检测 | mtime 快但不准确，hash 慢但精确；mtime 先筛，hash 再验 |
+| 大文件只用 mtime | 超过 1MB 的文件 hash 太慢 |
+| 每行 flush | 确保事件立即写入磁盘，程序崩溃时不丢数据 |
+| 正则脱敏 | 简单高效，不需要外部依赖 |
+
+### 新增文件
+
+```
+src/agent/observability/
+├── __init__.py
+├── trace.py
+├── reporter.py
+├── checkpoint.py
+├── redactor.py
+└── workspace.py
+
+src/agent/persistence/
+├── __init__.py
+├── session_store.py
+└── run_store.py
+
+src/agent/evaluation/
+└── recovery_experiment.py
+
+tests/
+├── test_observability.py
+└── test_recovery_experiment.py
+
+docs/test-reports/
+└── P4-recovery-ablation.md
+
+scripts/
+└── run_recovery_experiment.py
+```
+
+### 测试报告
+
+- `docs/test-reports/P4-recovery-ablation.md`
+
+---
+
 ## Session 17 — 2026-06-30 P3 工具鲁棒性
 
 **功能**: P3 工具鲁棒性

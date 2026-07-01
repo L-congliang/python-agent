@@ -45,6 +45,10 @@ htmlcov/
 .DS_Store
 *.log
 
+# Agent runtime
+.agent/
+checkpoints/
+
 # Internal development records (not for public)
 
 # Home directory (Git Bash ~ expansion)

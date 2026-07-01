@@ -159,27 +159,27 @@
     {
       "id": "P4",
       "name": "可观测性",
-      "status": "pending",
+      "status": "done",
       "features": [
         {
           "id": "P4.1",
           "name": "Trace 事件系统",
           "file": "observability/trace.py",
-          "status": "pending",
+          "status": "done",
           "description": "prompt_built/model_requested/tool_executed/run_finished 事件 + Run Report"
         },
         {
           "id": "P4.2",
           "name": "Checkpoint 系统",
           "file": "observability/checkpoint.py",
-          "status": "pending",
+          "status": "done",
           "description": "每步快照 + freshness 检测"
         },
         {
           "id": "P4.3",
           "name": "Session + Run 持久化",
           "file": "persistence/session.py, persistence/run_store.py",
-          "status": "pending",
+          "status": "done",
           "description": "会话持久化 + 运行工件存储 + 敏感信息脱敏 + Workspace 快照"
         }
       ]
