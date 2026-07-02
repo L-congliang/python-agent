@@ -52,6 +52,8 @@ from agent.observability.reporter import RunReporter
 from agent.observability.checkpoint import CheckpointManager
 from agent.observability.workspace import WorkspaceSnapshot
 from agent.persistence.run_store import RunStore
+from agent.orchestration.sub_agent import SubAgentConstraints, SubAgentResult, SubAgentStatus
+from agent.orchestration.agent_type import AgentTypeDefinition
 
 logger = logging.getLogger("agent.loop")
 
@@ -95,6 +97,9 @@ class LoopConfig:
     enable_trace: bool = True  # 是否启用 trace
     enable_checkpoint: bool = True  # 是否启用 checkpoint
     checkpoint_interval: int = 1  # 每 N 个工具调用创建 checkpoint
+
+    # 多 Agent 配置
+    enable_subagent: bool = True  # 是否启用 SubAgentTool
 
 
 class AgentLoop:
@@ -157,6 +162,10 @@ class AgentLoop:
         else:
             self._adapter = adapter
 
+        # 注册 SubAgentTool（如果配置允许）
+        if self._config.enable_subagent:
+            self._register_subagent_tool()
+
         # 鲁棒性组件
         self._task_state = TaskState()
         self._repeat_detector = RepeatDetector(max_repeats=self._config.max_repeated_calls)
@@ -183,6 +192,194 @@ class AgentLoop:
         if self._config.workspace_root:
             self._workspace_snapshot = WorkspaceSnapshot(Path(self._config.workspace_root))
 
+        # 子 Agent 约束（只有子 Agent 才有）
+        self._subagent_constraints: SubAgentConstraints | None = None
+
+    # ============================================================
+    # 子 Agent 工厂方法
+    # ============================================================
+
+    @classmethod
+    def create_sub_agent(
+        cls,
+        parent: AgentLoop,
+        task: str,
+        agent_type_def: AgentTypeDefinition,
+        constraints: SubAgentConstraints,
+        extra_context: str = "",
+    ) -> AgentLoop:
+        """工厂方法：从父 Agent 创建子 Agent
+
+        对齐 Claude Code 的子 Agent 创建逻辑：
+        - 继承 client 和 adapter
+        - 继承父 Agent 的记忆（通过 system prompt）
+        - 使用 agent_type 定义的工具集
+        - 共享约束（token budget、abort、counter）
+
+        Args:
+            parent: 父 AgentLoop 实例
+            task: 子 Agent 的任务描述
+            agent_type_def: Agent 类型定义
+            constraints: 共享约束
+            extra_context: 额外上下文（可选）
+
+        Returns:
+            新的 AgentLoop 实例（子 Agent）
+        """
+        # 1. 构建子 Agent 的 system prompt
+        system_prompt = cls._build_subagent_prompt(
+            parent=parent,
+            agent_type_def=agent_type_def,
+            task=task,
+            extra_context=extra_context,
+        )
+
+        # 2. 创建受限的 ToolRegistry
+        sub_registry = cls._filter_registry(
+            parent._registry,
+            agent_type_def.allowed_tools,
+        )
+
+        # 3. 确定 max_turns（取类型默认值和父 Agent 剩余轮次的较小值）
+        parent_remaining_turns = parent._config.max_turns - parent._turn_count
+        type_default_turns = agent_type_def.default_max_turns or 20
+        max_turns = min(type_default_turns, parent_remaining_turns)
+
+        # 4. 创建子 Agent 的 LoopConfig
+        sub_config = LoopConfig(
+            model=agent_type_def.default_model or parent._config.model,
+            max_turns=max_turns,
+            max_tool_calls=50,
+            system_prompt=system_prompt,
+            enable_trace=False,  # 嵌套到父 Agent 的 trace
+            enable_checkpoint=False,
+            workspace_root=parent._config.workspace_root,
+        )
+
+        # 5. 创建子 AgentLoop
+        sub_agent = cls(
+            client=parent._client,
+            registry=sub_registry,
+            config=sub_config,
+            adapter=parent._adapter,
+        )
+        sub_agent._subagent_constraints = constraints
+
+        # 6. 记录 agent 创建
+        constraints.record_agent_created()
+
+        logger.info(
+            "Created sub-agent: type=%s, max_turns=%d, tools=%s",
+            agent_type_def.name,
+            max_turns,
+            [t.name for t in sub_registry.get_all()],
+        )
+
+        return sub_agent
+
+    @staticmethod
+    def _build_subagent_prompt(
+        parent: AgentLoop,
+        agent_type_def: AgentTypeDefinition,
+        task: str,
+        extra_context: str = "",
+    ) -> str:
+        """构建子 Agent 的 system prompt
+
+        组合：
+        1. agent_type 的 system_prompt（如果有）
+        2. 父 Agent 的 memory.render_compact() 输出
+        3. 额外上下文（如果有）
+        4. 工具列表
+
+        Args:
+            parent: 父 AgentLoop 实例
+            agent_type_def: Agent 类型定义
+            task: 子 Agent 的任务描述
+            extra_context: 额外上下文
+
+        Returns:
+            组合后的 system prompt
+        """
+        parts = []
+
+        # Agent 类型的 system prompt
+        if agent_type_def.system_prompt:
+            parts.append(agent_type_def.system_prompt)
+        else:
+            parts.append(
+                f"You are a sub-agent of type '{agent_type_def.name}'. "
+                f"{agent_type_def.description}"
+            )
+
+        # 父 Agent 的记忆（只读继承）
+        parent_memory = parent._memory.render_compact()
+        if parent_memory:
+            parts.append(f"Parent agent context:\n{parent_memory}")
+
+        # 额外上下文
+        if extra_context:
+            parts.append(extra_context)
+
+        # 工具列表
+        tools = parent._registry.get_enabled_tools()
+        if agent_type_def.allowed_tools:
+            tools = [t for t in tools if t.name in agent_type_def.allowed_tools]
+        if tools:
+            tool_desc = "Available tools:\n"
+            for tool in tools:
+                tool_desc += f"- {tool.name}: {tool.description}\n"
+            parts.append(tool_desc)
+
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _filter_registry(
+        registry: ToolRegistry,
+        allowed_tools: list[str] | None,
+    ) -> ToolRegistry:
+        """从父 Agent 的 registry 过滤出允许的工具
+
+        Args:
+            registry: 父 Agent 的 ToolRegistry
+            allowed_tools: 允许的工具名列表（None = 全部）
+
+        Returns:
+            过滤后的新 ToolRegistry
+        """
+        if allowed_tools is None:
+            return registry.clone()
+        return registry.filter_by_names(allowed_tools)
+
+    def create_subagent_result(self, final_answer: str = "") -> SubAgentResult:
+        """创建子 Agent 的执行结果
+
+        Args:
+            final_answer: 最终回复文本
+
+        Returns:
+            SubAgentResult 实例
+        """
+        # 确定状态
+        if self._task_state.status == TaskStatus.COMPLETED:
+            status = SubAgentStatus.COMPLETED
+        elif self._task_state.status == TaskStatus.STOPPED:
+            status = SubAgentStatus.STOPPED
+        elif self._task_state.status == TaskStatus.FAILED:
+            status = SubAgentStatus.FAILED
+        else:
+            status = SubAgentStatus.COMPLETED
+
+        return SubAgentResult(
+            result=final_answer,
+            status=status,
+            turns_used=self._turn_count,
+            tool_calls_used=self._tool_call_count,
+            tokens_used=self._total_tokens,
+            agent_type=getattr(self, '_agent_type_name', 'general-purpose'),
+            error=self._task_state.metadata.get("error"),
+        )
+
     def run(self, user_input: str) -> str:
         """运行一轮完整的对话（同步）
 
@@ -208,6 +405,13 @@ class AgentLoop:
         Raises:
             KeyboardInterrupt: 用户中断（Ctrl+C）
         """
+        # 子 Agent 约束检查
+        if self._subagent_constraints:
+            if not self._subagent_constraints.can_create_agent():
+                return "[错误] 超过最大 Agent 数量限制"
+            if self._subagent_constraints.remaining_budget() <= 0:
+                return "[错误] Token 预算已耗尽"
+
         # 初始化任务状态
         self._task_state = TaskState(user_request=user_input)
         self._repeat_detector.reset()
@@ -287,13 +491,15 @@ class AgentLoop:
 
             # 累加 token 使用量
             if stream_result.usage:
-                self._total_tokens += stream_result.usage.get("input_tokens", 0)
-                logger.debug("Token count: %d (+%d input)", self._total_tokens, stream_result.usage.get("input_tokens", 0))
+                input_tokens = stream_result.usage.get("input_tokens", 0)
+                output_tokens = stream_result.usage.get("output_tokens", 0)
+                self._total_tokens += input_tokens
+                logger.debug("Token count: %d (+%d input)", self._total_tokens, input_tokens)
                 if self._reporter:
-                    self._reporter.record_tokens(
-                        stream_result.usage.get("input_tokens", 0),
-                        stream_result.usage.get("output_tokens", 0),
-                    )
+                    self._reporter.record_tokens(input_tokens, output_tokens)
+                # 子 Agent 约束追踪
+                if self._subagent_constraints:
+                    self._subagent_constraints.record_tokens_spent(input_tokens + output_tokens)
 
             # 检查是否需要压缩
             self._check_compaction()
@@ -580,6 +786,16 @@ class AgentLoop:
     # 内部方法
     # ============================================================
 
+    def _register_subagent_tool(self) -> None:
+        """注册 SubAgentTool 到 ToolRegistry
+
+        如果 SubAgentTool 未注册，则注册它。
+        """
+        if self._registry.get("subagent") is None:
+            from agent.tools.subagent import SubAgentTool
+            self._registry.register(SubAgentTool)
+            logger.debug("Registered SubAgentTool")
+
     def _check_compaction(self) -> None:
         """检查是否需要自动压缩
 
@@ -630,6 +846,21 @@ class AgentLoop:
             for tool in tools:
                 tool_desc += f"- {tool.name}: {tool.description}\n"
             parts.append(tool_desc)
+
+        # 添加 SubAgent 使用说明（如果已注册）
+        if self._registry.get("subagent") is not None:
+            parts.append(
+                "## SubAgent 使用指南\n"
+                "当任务可以并行执行、需要独立上下文、或涉及大量文件搜索时，"
+                "使用 subagent 工具派生子 Agent。\n"
+                "适用场景：\n"
+                "- 搜索大量文件（如搜索所有 TODO）\n"
+                "- 复杂多步任务（可以拆分为独立子任务）\n"
+                "- 需要独立上下文的任务（避免污染主对话）\n"
+                "不适用场景：\n"
+                "- 简单单步操作（直接用现有工具更快）\n"
+                "- 需要用户交互的任务（子 Agent 不能向用户提问）"
+            )
 
         return "\n\n".join(parts)
 

@@ -9,6 +9,9 @@
 - validate_and_execute 的错误处理？
   每一步失败都返回 ToolResult(is_error=True)，不抛异常。
   这样主循环可以统一处理，不需要 try/except。
+- filter_by_names 和 clone？
+  子 Agent 需要受限的工具集。filter_by_names 创建只包含指定工具的新注册表。
+  clone 创建深拷贝，避免修改影响原注册表。
 """
 
 from __future__ import annotations
@@ -206,3 +209,34 @@ class ToolRegistry:
                 output=f"工具 '{name}' 执行时抛出异常: {type(e).__name__}: {e}",
                 is_error=True,
             )
+
+    def filter_by_names(self, names: list[str]) -> ToolRegistry:
+        """按名称过滤工具，创建新的注册表
+
+        用于子 Agent 的工具集限制。
+        只包含指定名称的工具，忽略不存在的名称。
+
+        Args:
+            names: 允许的工具名列表
+
+        Returns:
+            新的 ToolRegistry 实例，只包含指定的工具
+        """
+        filtered = ToolRegistry()
+        for name in names:
+            tool = self._tools.get(name)
+            if tool is not None:
+                filtered._tools[name] = tool
+        return filtered
+
+    def clone(self) -> ToolRegistry:
+        """创建注册表的浅拷贝
+
+        子 Agent 需要独立的注册表，但工具实例可以共享（工具是无状态的）。
+
+        Returns:
+            新的 ToolRegistry 实例，包含相同的工具引用
+        """
+        cloned = ToolRegistry()
+        cloned._tools = dict(self._tools)
+        return cloned

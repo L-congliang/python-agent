@@ -186,22 +186,22 @@
     },
     {
       "id": "P5",
-      "name": "多 Agent 路由",
-      "status": "pending",
+      "name": "多 Agent",
+      "status": "done",
       "features": [
         {
           "id": "P5.1",
-          "name": "AgentRegistry + 意图路由器",
-          "file": "orchestration/registry.py, orchestration/router.py",
-          "status": "pending",
-          "description": "注册多个 agent + 用户意图 → capabilities 匹配"
+          "name": "SubAgentTool",
+          "file": "tools/subagent.py",
+          "status": "done",
+          "description": "子 Agent 工具，主 Agent 通过调用此工具派生子任务，对齐 Claude Code 的 SubAgentTool"
         },
         {
           "id": "P5.2",
-          "name": "编排器 + Sub-Agent",
-          "file": "orchestration/orchestrator.py, orchestration/sub_agent.py",
-          "status": "pending",
-          "description": "顺序/并行执行控制 + spawn 子 agent + agent 间通信"
+          "name": "子 Agent 上下文隔离",
+          "file": "orchestration/sub_agent.py",
+          "status": "done",
+          "description": "子 Agent 独立上下文，只接收 task 描述，执行完销毁，避免污染主 Agent"
         }
       ]
     },
