@@ -17,6 +17,31 @@ from agent.tools.base import build_tool
 
 
 # ============================================================
+# 环境变量沙箱
+# ============================================================
+
+# 安全环境变量白名单 — 只传递这些变量给子进程
+# 为什么用白名单而不是黑名单？白名单 fail-closed，新增变量默认不传递
+SAFE_ENV_VARS: set[str] = {
+    # 基础
+    "HOME", "USER", "PATH", "SHELL", "LANG", "LC_ALL", "TERM", "PWD",
+    # 临时目录
+    "TMPDIR", "TEMP", "TMP", "XDG_RUNTIME_DIR",
+    # Windows 必需（cmd.exe 和 Git Bash 都需要）
+    "COMSPEC", "SYSTEMROOT",
+}
+
+
+def _build_safe_env() -> dict[str, str]:
+    """从 os.environ 过滤出白名单环境变量
+
+    Returns:
+        只包含白名单变量的环境变量字典
+    """
+    return {k: v for k, v in os.environ.items() if k in SAFE_ENV_VARS}
+
+
+# ============================================================
 # Shell 检测
 # ============================================================
 
@@ -146,12 +171,14 @@ def execute_bash(input: dict, context: ToolUseContext) -> ToolResult:
 
     try:
         # 使用 subprocess.run 执行（列表参数，自己控制 shell）
+        # env 使用白名单过滤，防止 API_KEY 等敏感变量泄露给子进程
         result = subprocess.run(
             [shell_exe, shell_arg, command],
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=workdir,
+            env=_build_safe_env(),
         )
 
         # 格式化输出

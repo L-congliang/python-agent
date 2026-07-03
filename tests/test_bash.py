@@ -5,11 +5,13 @@ import pytest
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult
 from agent.tools.bash import (
+    _build_safe_env,
     _detect_shell,
     _shell_cache,
     _truncate_output,
     execute_bash,
     MAX_OUTPUT_LINES,
+    SAFE_ENV_VARS,
     validate_bash_input,
     bash_tool,
 )
@@ -36,6 +38,70 @@ class TestDetectShell:
         result1 = _detect_shell()
         result2 = _detect_shell()
         assert result1 is result2
+
+
+# ============================================================
+# 环境变量沙箱测试
+# ============================================================
+
+
+class TestEnvSandbox:
+    """环境变量白名单测试"""
+
+    def test_safe_env_vars_contains_essential_vars(self):
+        """白名单包含基础变量"""
+        assert "PATH" in SAFE_ENV_VARS
+        assert "HOME" in SAFE_ENV_VARS
+        assert "USER" in SAFE_ENV_VARS
+
+    def test_safe_env_vars_contains_windows_vars(self):
+        """白名单包含 Windows 必需变量"""
+        assert "COMSPEC" in SAFE_ENV_VARS
+        assert "SYSTEMROOT" in SAFE_ENV_VARS
+
+    def test_build_safe_env_filters_unsafe_vars(self, monkeypatch):
+        """_build_safe_env 不传递非白名单变量"""
+        monkeypatch.setenv("API_KEY", "secret123")
+        monkeypatch.setenv("MY_SECRET_TOKEN", "xyz")
+        monkeypatch.setenv("PATH", "/usr/bin")
+
+        env = _build_safe_env()
+        assert "API_KEY" not in env
+        assert "MY_SECRET_TOKEN" not in env
+        assert env.get("PATH") == "/usr/bin"
+
+    def test_build_safe_env_preserves_safe_vars(self, monkeypatch):
+        """_build_safe_env 保留白名单变量"""
+        monkeypatch.setenv("PATH", "/usr/bin")
+        monkeypatch.setenv("HOME", "/home/test")
+        monkeypatch.setenv("LANG", "en_US.UTF-8")
+
+        env = _build_safe_env()
+        assert env["PATH"] == "/usr/bin"
+        assert env["HOME"] == "/home/test"
+        assert env["LANG"] == "en_US.UTF-8"
+
+    def test_build_safe_env_is_subset_of_os_environ(self):
+        """_build_safe_env 结果是 os.environ 的子集"""
+        env = _build_safe_env()
+        for key in env:
+            assert key in SAFE_ENV_VARS
+            assert key in __import__("os").environ
+
+    def test_execute_bash_does_not_leak_secrets(self, context, monkeypatch):
+        """execute_bash 不泄露非白名单变量给子进程"""
+        monkeypatch.setenv("AGENT_SECRET_KEY", "should_not_leak")
+        result = execute_bash({"command": "env"}, context)
+        assert "AGENT_SECRET_KEY" not in result.output
+        assert "should_not_leak" not in result.output
+
+    def test_execute_bash_passes_path(self, context):
+        """execute_bash 正确传递 PATH 变量"""
+        result = execute_bash({"command": "echo $PATH"}, context)
+        # PATH 应该有值（不为空）
+        assert not result.is_error
+        # 输出中不应该有 "$PATH"（说明变量被展开了）
+        assert "$PATH" not in result.output
 
 
 class TestTruncateOutput:
