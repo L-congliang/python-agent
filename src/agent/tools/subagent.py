@@ -164,7 +164,7 @@ def _cleanup_orphaned_worktrees(workspace_root: str | None = None) -> int:
     return cleaned
 
 
-def _execute_subagent(input: dict, context: ToolUseContext) -> ToolResult:
+def _execute_subagent(input: dict[str, Any], context: ToolUseContext) -> ToolResult:
     """SubAgentTool 的执行函数
 
     Args:
@@ -186,10 +186,6 @@ def _execute_subagent(input: dict, context: ToolUseContext) -> ToolResult:
     type_registry = get_type_registry()
     agent_type_def = type_registry.get(agent_type_name)
 
-    # 获取或创建约束
-    # 从 context.messages 中获取父 Agent 的约束（如果有的话）
-    constraints = SubAgentConstraints()
-
     # 查找父 Agent（从 context 中获取）
     parent_loop = _find_parent_agent(context)
     if parent_loop is None:
@@ -197,6 +193,12 @@ def _execute_subagent(input: dict, context: ToolUseContext) -> ToolResult:
             output="[错误] 无法找到父 Agent 实例",
             is_error=True,
         )
+
+    # 从父 Agent 继承约束（共享 token budget、agent counter）
+    constraints = parent_loop._subagent_constraints
+    if constraints is None:
+        constraints = SubAgentConstraints()
+        parent_loop._subagent_constraints = constraints
 
     # 检查约束
     if not constraints.can_create_agent():
@@ -234,14 +236,7 @@ def _find_parent_agent(context: ToolUseContext) -> Any:
     Returns:
         AgentLoop 实例或 None
     """
-    # ToolUseContext 没有直接引用 AgentLoop
-    # 但我们可以从 context 中获取必要信息来创建子 Agent
-    # 这里我们需要一个更好的方式来传递父 Agent 引用
-    # 暂时通过全局变量或上下文扩展来实现
-
-    # 方案：通过 context 的 messages 和 tools 重建父 Agent 的部分状态
-    # 更好的方案：在 ToolUseContext 中添加 agent_loop 引用
-    return None
+    return context.agent_loop
 
 
 def _execute_blocking(

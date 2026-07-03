@@ -918,6 +918,7 @@ class AgentLoop:
             messages=self._messages,
             debug=self._config.debug,
             verbose=self._config.verbose,
+            agent_loop=self,
         )
 
         results = []

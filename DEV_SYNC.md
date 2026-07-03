@@ -10,8 +10,8 @@
 
 ## 最新状态
 
-- **当前功能**: P4 可观测性 — **已完成**
-- **最后更新**: 2026-07-01
+- **当前功能**: P5 多 Agent — Bug 修复
+- **最后更新**: 2026-07-02
 - **最后地点**: 家
 - **当前所在地**: 家
 
@@ -27,6 +27,32 @@
 ---
 
 ## 工作日志
+
+### 2026-07-02 Session 19 — P5 多 Agent 代码审查 + Bug 修复
+
+**做了什么:**
+- 深度审查 P5 多 Agent 系统全部代码（~1100 行，4 个模块）
+- 逐模块讲解：agent_type.py → sub_agent.py → message_bus.py → subagent.py → loop.py 集成
+- 发现并修复 2 个 Bug：
+  1. `_find_parent_agent()` 返回 None — 给 ToolUseContext 加 agent_loop 字段
+  2. SubAgentConstraints 每次新建 — 改为从父 Agent 继承
+- 额外修复：parent_loop 赋值顺序、input 类型注解
+
+**验证结果：**
+- mypy --strict：改过的文件 0 错误
+- 全量测试：709 passed, 3 skipped
+
+**当前进度:**
+- P0 (评测框架 + 基础能力) — ✅ done
+- P1 (上下文工程) — ✅ done
+- P2 (分层记忆系统) — ✅ done（已通过真实模型验证）
+- P3 (工具鲁棒性) — ✅ done
+- P4 (可观测性) — ✅ done
+- P5 (多 Agent) — ✅ done（已修复 2 个 Bug）
+- P6-P8 — pending
+
+**下次从这里开始:**
+- P6 意图识别与 Prompt 工程（System Prompt 优化 + 意图分类）
 
 ### 2026-07-01 Session 18 — P4 可观测性
 

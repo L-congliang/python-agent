@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from agent.tools.base import Tool
@@ -112,3 +112,6 @@ class ToolUseContext:
     cwd: str = "."
     max_budget_usd: float | None = None
     custom_system_prompt: str | None = None
+
+    # 多 Agent 支持：指向当前 AgentLoop 的引用
+    agent_loop: Any = None  # AgentLoop，用 Any 避免循环导入

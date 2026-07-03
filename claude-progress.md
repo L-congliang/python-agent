@@ -1,5 +1,60 @@
 # 进度日志
 
+## Session 19 — 2026-07-02 P5 多 Agent 代码审查 + Bug 修复
+
+**功能**: P5 多 Agent — 代码审查 + Bug 修复
+**状态**: ✅ 已修复
+
+### 背景
+
+用户要求深度了解 P5 实现细节，逐模块讲解了整个多 Agent 系统的设计和代码。
+
+### P5 架构总览
+
+```
+orchestration/agent_type.py   → 类型系统（AgentTypeDefinition + AgentTypeRegistry）
+orchestration/sub_agent.py    → 数据结构（SubAgentConstraints, SubAgentResult, SubAgentTask）
+orchestration/message_bus.py  → 后台任务管理（TaskManager）
+tools/subagent.py             → 工具入口 + worktree 管理
+core/loop.py                  → 工厂方法 + 自动注册
+```
+
+### 核心设计
+
+| 组件 | 职责 |
+|------|------|
+| AgentTypeRegistry | 定义 Agent 类型（general-purpose/explore/code-reviewer），按类型过滤工具 |
+| SubAgentConstraints | 共享预算本（token budget、agent counter），父子引用传递 |
+| TaskManager | 后台任务工单系统（register/get_result/stop） |
+| SubAgentTool | 主 Agent 调用子 Agent 的工具入口，支持阻塞和后台两种模式 |
+| AgentLoop.create_sub_agent() | 工厂方法，创建子 Agent（继承 client、过滤工具、共享约束） |
+
+### 发现并修复的 Bug
+
+**Bug 1：`_find_parent_agent()` 返回 None**
+- 原因：ToolUseContext 没有 agent_loop 字段
+- 影响：SubAgentTool 每次调用都报错"无法找到父 Agent 实例"
+- 修复：
+  - `context.py` — 添加 `agent_loop: Any = None` 字段
+  - `loop.py` — 创建 ToolUseContext 时传入 `agent_loop=self`
+  - `subagent.py` — `_find_parent_agent` 改为 `return context.agent_loop`
+
+**Bug 2：SubAgentConstraints 每次新建**
+- 原因：`constraints = SubAgentConstraints()` 每次调用都新建
+- 影响：token budget 和 agent counter 限制形同虚设
+- 修复：改为从 `parent_loop._subagent_constraints` 继承，没有才新建
+
+**额外修复**：
+- 调换 parent_loop 赋值顺序（先找父 Agent，再取约束）
+- 修 `input: dict` → `input: dict[str, Any]` 类型注解
+
+### 验证结果
+
+- mypy --strict：改过的文件 0 错误
+- 全量测试：709 passed, 3 skipped
+
+---
+
 ## Session 18 — 2026-07-01 P4 可观测性
 
 **功能**: P4 可观测性
