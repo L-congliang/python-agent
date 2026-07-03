@@ -317,7 +317,7 @@ GREP_PARAMETERS = {
 
 grep_tool = build_tool(
     name="grep",
-    description="搜索文件内容。支持正则表达式、文件过滤、路径指定等。",
+    description="搜索文件内容。支持正则表达式、文件过滤、路径指定等。优先于 bash grep 使用。",
     parameters=GREP_PARAMETERS,
     execute_fn=execute_grep,
     is_read_only=lambda input: True,

@@ -208,21 +208,28 @@
     {
       "id": "P6",
       "name": "意图识别与 Prompt 工程",
-      "status": "pending",
+      "status": "done",
       "features": [
         {
           "id": "P6.1",
           "name": "System Prompt + Tool Description 优化",
-          "file": "core/prompts.py",
-          "status": "pending",
-          "description": "结构化 system prompt + 工具描述精准化"
+          "file": "prompts/builder.py, tools/*.py",
+          "status": "done",
+          "description": "SystemPromptBuilder（Identity + Behavior + Tool Guide）+ Tool Description 微调"
         },
         {
           "id": "P6.2",
-          "name": "意图分类 + Plan Mode",
-          "file": "core/intent.py, core/plan_mode.py",
-          "status": "pending",
-          "description": "code-edit/code-search/question/chat 分类 + 先规划再执行"
+          "name": "Plan Mode",
+          "file": "core/loop.py, permissions/checker.py",
+          "status": "done",
+          "description": "用户触发 + 权限控制 + 意图检测 + 确认/取消流程"
+        },
+        {
+          "id": "P6.3",
+          "name": "Prompt Ablation Experiment",
+          "file": "experiments/prompt_ablation.py",
+          "status": "done",
+          "description": "4 配置对比实验，Identity 贡献最大（+333%）"
         }
       ]
     },

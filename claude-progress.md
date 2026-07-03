@@ -1,5 +1,37 @@
 # 进度日志
 
+## Session 20 — 2026-07-03 P6 意图识别与 Prompt 工程
+
+**功能**: P6 意图识别与 Prompt 工程
+**状态**: ✅ 已完成
+
+### 完成内容
+
+1. **SystemPromptBuilder** — 结构化 prompt 组装（Identity + Behavior + Tool Guide + Dynamic Context）
+2. **Tool Description 微调** — edit/write/grep 描述加选择提示
+3. **Plan Mode** — 用户触发 + 权限控制 + 意图检测 + 确认/取消流程
+4. **MimoAdapter 修复** — 支持 `<function=read>` 格式（mimo 新 XML 格式）
+5. **Prompt Ablation Experiment** — 真实 API 实验，Identity 贡献最大（+333%）
+6. **Benchmark 对比** — pass_rate 持平 40%，avg_attempts 下降 35%
+
+### 关键发现
+
+- Identity 部分对工具选择准确率贡献最大（13.6% → 59.1%）
+- Tool Guide 单独用效果一般，但和 Identity 组合时维持相同准确率
+- mimo 输出的 XML 格式有变化：`<function=read>` 替代 `<function_read>`
+
+### 新增文件
+
+- `src/agent/prompts/builder.py` — SystemPromptBuilder
+- `src/agent/experiments/prompt_ablation.py` — Prompt Ablation 实验
+- `tests/test_system_prompt.py` — System Prompt 测试
+- `tests/test_tool_description.py` — Tool Description 测试
+- `tests/test_plan_mode.py` — Plan Mode 测试
+- `docs/test-reports/P6-prompt-ablation.md` — 实验报告
+- `docs/test-reports/P6-benchmark.md` — Benchmark 报告
+
+---
+
 ## Session 19 — 2026-07-02 P5 多 Agent 代码审查 + Bug 修复
 
 **功能**: P5 多 Agent — 代码审查 + Bug 修复

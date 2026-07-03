@@ -212,3 +212,7 @@ uv run make check
 ## License
 
 MIT
+
+## Contributing
+
+Contributions are welcome! Please open an issue first.

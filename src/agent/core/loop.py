@@ -33,6 +33,7 @@ from agent.core.model import MimoClient
 from agent.core.model_adapter import ModelAdapter, ToolCall as AdapterToolCall
 from agent.core.types import (
     Message,
+    PermissionBehavior,
     Role,
     ToolCall,
     ToolCallResult,
@@ -54,6 +55,7 @@ from agent.observability.workspace import WorkspaceSnapshot
 from agent.persistence.run_store import RunStore
 from agent.orchestration.sub_agent import SubAgentConstraints, SubAgentResult, SubAgentStatus
 from agent.orchestration.agent_type import AgentTypeDefinition
+from agent.permissions.checker import PermissionChecker, PermissionMode
 
 logger = logging.getLogger("agent.loop")
 
@@ -80,6 +82,9 @@ class LoopConfig:
     # 系统提示
     system_prompt: str = ""
     append_system_prompt: str = ""  # 追加的系统提示
+
+    # Plan Mode
+    plan_mode: bool = False  # 是否处于计划模式
 
     # 回调
     on_notify: Callable[[str], None] | None = None  # 通知回调
@@ -171,6 +176,10 @@ class AgentLoop:
         self._repeat_detector = RepeatDetector(max_repeats=self._config.max_repeated_calls)
         self._path_guard = PathGuard(workspace_root=self._config.workspace_root)
         self._retry_limiter = RetryLimiter(max_retries=self._config.max_consecutive_failures)
+
+        # 权限检查器
+        initial_mode = PermissionMode.PLAN if self._config.plan_mode else PermissionMode.DEFAULT
+        self._permission_checker = PermissionChecker(mode=initial_mode)
 
         # 可观测性组件
         self._run_store = RunStore(Path(".agent/runs"))
@@ -442,6 +451,17 @@ class AgentLoop:
             if self._trace:
                 self._trace.emit("workspace_snapshot", workspace_info)
 
+        # 检测规划意图，自动启用 Plan Mode
+        if self._detect_planning_intent(user_input):
+            self.enable_plan_mode()
+
+        # 检测确认/取消意图，自动禁用 Plan Mode
+        if self._config.plan_mode:
+            if self._detect_confirmation_intent(user_input):
+                self.disable_plan_mode()
+            elif self._detect_cancel_intent(user_input):
+                self.disable_plan_mode()
+
         # 添加用户消息
         self._messages.append({"role": "user", "content": user_input})
 
@@ -468,8 +488,10 @@ class AgentLoop:
                 })
 
             try:
+                # 获取工具列表（Anthropic 格式）
+                tools = self._registry.to_anthropic_tools()
                 stream_result = self._client.chat_stream(
-                    self._messages, system=system
+                    self._messages, system=system, tools=tools if tools else None
                 )
                 # 消费所有 chunk 以获取 content_blocks
                 text_chunks = list(stream_result.text)
@@ -629,8 +651,10 @@ class AgentLoop:
             logger.info("Turn %d: streaming model call", self._turn_count + 1)
 
             try:
+                # 获取工具列表（Anthropic 格式）
+                tools = self._registry.to_anthropic_tools()
                 stream_result = self._client.chat_stream(
-                    self._messages, system=system
+                    self._messages, system=system, tools=tools if tools else None
                 )
             except Exception as e:
                 # 模型错误：设置任务状态为 FAILED
@@ -767,6 +791,24 @@ class AgentLoop:
         self._abort_controller.abort()
         logger.info("Agent loop abort requested")
 
+    def enable_plan_mode(self) -> None:
+        """启用 Plan Mode
+
+        切换权限检查器到 PLAN 模式，禁止所有写操作。
+        """
+        self._config.plan_mode = True
+        self._permission_checker.set_mode(PermissionMode.PLAN)
+        logger.info("Plan mode enabled")
+
+    def disable_plan_mode(self) -> None:
+        """禁用 Plan Mode
+
+        切换权限检查器到 DEFAULT 模式，恢复正常权限。
+        """
+        self._config.plan_mode = False
+        self._permission_checker.set_mode(PermissionMode.DEFAULT)
+        logger.info("Plan mode disabled")
+
     @property
     def memory(self) -> MemoryManager:
         """获取记忆管理器"""
@@ -796,6 +838,52 @@ class AgentLoop:
             self._registry.register(SubAgentTool)
             logger.debug("Registered SubAgentTool")
 
+    def _detect_planning_intent(self, user_input: str) -> bool:
+        """检测用户是否表达规划意图
+
+        通过关键词匹配判断，不调用模型。
+        匹配到规划意图时自动启用 Plan Mode。
+
+        Args:
+            user_input: 用户输入
+
+        Returns:
+            True 如果检测到规划意图
+        """
+        planning_keywords = [
+            "先规划", "先想清楚", "先计划", "列出计划",
+            "做个计划", "做个规划", "规划一下", "计划一下",
+            "先想一下", "先分析一下", "先设计一下",
+        ]
+        input_lower = user_input.lower()
+        return any(keyword in input_lower for keyword in planning_keywords)
+
+    def _detect_confirmation_intent(self, user_input: str) -> bool:
+        """检测用户是否确认计划
+
+        Args:
+            user_input: 用户输入
+
+        Returns:
+            True 如果检测到确认意图
+        """
+        confirm_keywords = ["确认", "执行", "开始", "同意", "可以", "好的"]
+        input_lower = user_input.lower()
+        return any(keyword in input_lower for keyword in confirm_keywords)
+
+    def _detect_cancel_intent(self, user_input: str) -> bool:
+        """检测用户是否取消计划
+
+        Args:
+            user_input: 用户输入
+
+        Returns:
+            True 如果检测到取消意图
+        """
+        cancel_keywords = ["取消", "直接改", "直接做", "不用规划了"]
+        input_lower = user_input.lower()
+        return any(keyword in input_lower for keyword in cancel_keywords)
+
     def _check_compaction(self) -> None:
         """检查是否需要自动压缩
 
@@ -820,49 +908,31 @@ class AgentLoop:
     def _build_system_prompt(self) -> str:
         """构建系统提示
 
-        组合:
-        1. config.system_prompt（基础提示）
-        2. config.append_system_prompt（追加提示）
-        3. 记忆渲染（工作记忆 + 文件摘要 + 事件笔记）
-        4. 工具使用说明（动态生成）
+        使用 SystemPromptBuilder 组装结构化 prompt：
+        1. Identity（agent 身份定义）
+        2. Behavioral Guidelines（通用原则 + 具体规则）
+        3. Tool Selection Guide（工具选择指南）
+        4. Dynamic Context（记忆、工具列表、SubAgent）
+
+        config.system_prompt 和 config.append_system_prompt 作为额外内容追加。
         """
-        parts = []
+        from agent.prompts.builder import SystemPromptBuilder
 
+        # 组装额外 prompt（用户自定义部分）
+        extra_parts: list[str] = []
         if self._config.system_prompt:
-            parts.append(self._config.system_prompt)
-
+            extra_parts.append(self._config.system_prompt)
         if self._config.append_system_prompt:
-            parts.append(self._config.append_system_prompt)
+            extra_parts.append(self._config.append_system_prompt)
+        extra_prompt = "\n\n".join(extra_parts)
 
-        # 添加记忆信息
-        memory_output = self._memory.render()
-        if memory_output:
-            parts.append(memory_output)
-
-        # 添加工具说明
-        tools = self._registry.get_enabled_tools()
-        if tools:
-            tool_desc = "可用工具:\n"
-            for tool in tools:
-                tool_desc += f"- {tool.name}: {tool.description}\n"
-            parts.append(tool_desc)
-
-        # 添加 SubAgent 使用说明（如果已注册）
-        if self._registry.get("subagent") is not None:
-            parts.append(
-                "## SubAgent 使用指南\n"
-                "当任务可以并行执行、需要独立上下文、或涉及大量文件搜索时，"
-                "使用 subagent 工具派生子 Agent。\n"
-                "适用场景：\n"
-                "- 搜索大量文件（如搜索所有 TODO）\n"
-                "- 复杂多步任务（可以拆分为独立子任务）\n"
-                "- 需要独立上下文的任务（避免污染主对话）\n"
-                "不适用场景：\n"
-                "- 简单单步操作（直接用现有工具更快）\n"
-                "- 需要用户交互的任务（子 Agent 不能向用户提问）"
-            )
-
-        return "\n\n".join(parts)
+        return SystemPromptBuilder.build(
+            memory=self._memory,
+            registry=self._registry,
+            subagent_registered=self._registry.get("subagent") is not None,
+            plan_mode=self._config.plan_mode,
+            extra_prompt=extra_prompt,
+        )
 
     def _parse_content_blocks(
         self, blocks: list[dict[str, Any]]
@@ -951,6 +1021,21 @@ class AgentLoop:
                         results.append(ToolResult(output=path_msg, is_error=True))
                         self._retry_limiter.record_failure()
                         continue
+
+            # 权限检查（Plan Mode 下会拦截写操作）
+            tool = self._registry.get(tool_call.name)
+            if tool is not None:
+                perm_decision = self._permission_checker.check(
+                    tool, tool_call.arguments, context
+                )
+                if perm_decision.behavior == PermissionBehavior.DENY:
+                    logger.warning("Permission denied: %s - %s", tool_call.name, perm_decision.reason)
+                    results.append(ToolResult(
+                        output=f"[权限拒绝] {perm_decision.reason}",
+                        is_error=True,
+                    ))
+                    self._retry_limiter.record_failure()
+                    continue
 
             # 执行工具
             logger.info("Executing tool: %s", tool_call.name)

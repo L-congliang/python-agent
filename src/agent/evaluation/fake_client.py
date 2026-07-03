@@ -40,6 +40,7 @@ class FakeModelClient:
         self,
         messages: list[dict[str, Any]],
         system: str = "",
+        **kwargs: Any,
     ) -> StreamResult:
         """返回 StreamResult，兼容 AgentLoop 的流式接口。
 

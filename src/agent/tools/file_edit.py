@@ -211,7 +211,7 @@ def execute_file_edit(input: dict[str, Any], context: ToolUseContext) -> ToolRes
 
 file_edit_tool = build_tool(
     name="edit",
-    description="修改文件内容。基于 old_string/new_string 精确替换。",
+    description="修改文件内容。基于 old_string/new_string 精确替换。优先于 write 使用（edit 是局部替换，不会覆盖整个文件）。",
     parameters=FILE_EDIT_PARAMETERS,
     execute_fn=execute_file_edit,
     is_read_only=lambda input: False,       # 写操作

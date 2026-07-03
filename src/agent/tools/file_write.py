@@ -325,7 +325,7 @@ def execute_file_write(input: dict[str, Any], context: ToolUseContext) -> ToolRe
 
 file_write_tool = build_tool(
     name="write",
-    description="写入文件内容。创建新文件或覆盖现有文件。",
+    description="写入文件内容。仅用于创建新文件，修改已有文件请用 edit。",
     parameters=FILE_WRITE_PARAMETERS,
     execute_fn=execute_file_write,
     is_read_only=lambda input: False,       # 写操作

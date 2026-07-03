@@ -93,12 +93,18 @@ class MimoClient:
         )
         logger.info("MimoClient initialized: model=%s, base_url=%s", config.model, config.base_url)
 
-    def chat(self, messages: list[dict[str, str]], system: str = "") -> str:
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        system: str = "",
+        tools: list[dict[str, Any]] | None = None,
+    ) -> str:
         """同步对话，返回完整回复文本
 
         Args:
             messages: 对话历史，格式 [{"role": "user", "content": "..."}]
             system: 系统提示词
+            tools: 工具定义列表（Anthropic 格式）
 
         Returns:
             模型回复的文本内容
@@ -109,17 +115,21 @@ class MimoClient:
             anthropic.APITimeoutError: 请求超时（自动重试后仍失败）
             anthropic.APIError: 其他 API 错误
         """
-        logger.info("API call: %d messages, system=%d chars", len(messages), len(system))
+        logger.info("API call: %d messages, system=%d chars, tools=%d",
+                     len(messages), len(system), len(tools) if tools else 0)
         start_time = time.monotonic()
 
         def _call() -> str:
             """实际的 API 调用"""
-            response = self._client.messages.create(
-                model=self.config.model,
-                max_tokens=self.config.max_tokens,
-                messages=messages,
-                system=system if system else anthropic.NOT_GIVEN,
-            )
+            kwargs: dict[str, Any] = {
+                "model": self.config.model,
+                "max_tokens": self.config.max_tokens,
+                "messages": messages,
+                "system": system if system else anthropic.NOT_GIVEN,
+            }
+            if tools:
+                kwargs["tools"] = tools
+            response = self._client.messages.create(**kwargs)
             # 提取文本内容
             return response.content[0].text
 
@@ -128,7 +138,12 @@ class MimoClient:
         logger.info("API response: %d chars, %.2fs", len(result), elapsed)
         return result
 
-    def chat_stream(self, messages: list[dict[str, str]], system: str = "") -> StreamResult:
+    def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        system: str = "",
+        tools: list[dict[str, Any]] | None = None,
+    ) -> StreamResult:
         """流式对话，返回文本迭代器 + 完整 content blocks
 
         返回 StreamResult 而不是 Iterator[str]，因为 tool_use block
@@ -137,6 +152,7 @@ class MimoClient:
         Args:
             messages: 对话历史
             system: 系统提示词
+            tools: 工具定义列表（Anthropic 格式）
 
         Returns:
             StreamResult: 包含 text（迭代器）和 content_blocks（流结束后可用）
@@ -144,18 +160,22 @@ class MimoClient:
         Raises:
             同 chat()
         """
-        logger.info("API stream call: %d messages, system=%d chars", len(messages), len(system))
+        logger.info("API stream call: %d messages, system=%d chars, tools=%d",
+                     len(messages), len(system), len(tools) if tools else 0)
         start_time = time.monotonic()
         result = StreamResult(text=iter(()))  # 占位，下面替换
 
         def _stream() -> Iterator[str]:
             """流式生成器：yield text chunk，return 时填充 content_blocks 和 usage"""
-            with self._client.messages.stream(
-                model=self.config.model,
-                max_tokens=self.config.max_tokens,
-                messages=messages,
-                system=system if system else anthropic.NOT_GIVEN,
-            ) as stream:
+            kwargs: dict[str, Any] = {
+                "model": self.config.model,
+                "max_tokens": self.config.max_tokens,
+                "messages": messages,
+                "system": system if system else anthropic.NOT_GIVEN,
+            }
+            if tools:
+                kwargs["tools"] = tools
+            with self._client.messages.stream(**kwargs) as stream:
                 for text in stream.text_stream:
                     yield text
                 # 流结束后，获取完整 message 的 content blocks 和 usage
