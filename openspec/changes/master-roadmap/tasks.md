@@ -165,19 +165,3 @@
 - 测试报告: `docs/test-reports/P6-prompt-ablation.md`
 - 测试报告: `docs/test-reports/P6-benchmark.md`
 
-## Phase 7: MCP 协议兼容
-
-- [ ] 7.1 实现 MCP 工具描述转换（内部工具 → MCP 格式）
-- [ ] 7.2 实现 MCP Server（stdio transport、JSON-RPC）
-- [ ] 7.3 实现 MCP Client（连接第三方 MCP Server）
-- [ ] 7.4 实现协议版本协商（2024-11-05）
-- [ ] 7.5 编写 MCP 测试
-- [ ] 7.6 运行 benchmark 对比 Phase 6
-
-## Phase 8: 部署与交付
-
-- [ ] 8.1 配置 pyproject.toml（打包、入口点）
-- [ ] 8.2 配置 CLI 入口（`python -m agent` 或 `agent` 命令）
-- [ ] 8.3 配置管理（.env + 命令行参数 + 配置文件）
-- [ ] 8.4 更新 README（面向面试官的项目说明）
-- [ ] 8.5 最终 benchmark 运行，输出完整指标

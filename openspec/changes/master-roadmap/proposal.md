@@ -8,7 +8,7 @@
 4. **工具出错就崩** — 没有错误恢复机制，生产环境不可用
 5. **没有可观测性** — 出错了不知道为什么，没法调试和优化
 
-参照 Pico（同类型项目）的架构，需要补齐这些能力，同时覆盖面试所需的 6 个核心知识点：意图识别、MCP、多轮记忆、多 Agent 路由、监控评测、工具调用兜底。
+参照 Pico（同类型项目）的架构，需要补齐这些能力，同时覆盖面试所需的核心知识点：意图识别、多轮记忆、多 Agent 路由、监控评测、工具调用兜底。
 
 ## What Changes
 
@@ -19,7 +19,6 @@
 - 新增可观测性系统（Trace 事件 + Run Report + Checkpoint）
 - 新增多 Agent 能力（SubAgentTool + 子 Agent 隔离 + 上下文管理）
 - 优化意图识别（System Prompt + Tool Description + Plan Mode）
-- 新增 MCP 协议兼容层
 
 ## Capabilities
 
@@ -32,7 +31,6 @@
 - `observability`: 可观测性 — Trace 事件系统、Run Report、Checkpoint、会话持久化
 - `multi-agent`: 多 Agent — SubAgentTool、子 Agent 隔离、上下文管理
 - `intent-recognition`: 意图识别 — System Prompt 优化、Tool Description、Plan Mode
-- `mcp-protocol`: MCP 协议 — 标准化工具描述、MCP Server、MCP Client
 
 ### Modified Capabilities
 

@@ -49,7 +49,7 @@
 - P3 (工具鲁棒性) — ✅ done
 - P4 (可观测性) — ✅ done
 - P5 (多 Agent) — ✅ done（已修复 2 个 Bug）
-- P6-P8 — pending
+- P6 — pending
 
 **下次从这里开始:**
 - P6 意图识别与 Prompt 工程（System Prompt 优化 + 意图分类）
@@ -76,7 +76,7 @@
 - P2 (分层记忆系统) — ✅ done（已通过真实模型验证）
 - P3 (工具鲁棒性) — ✅ done
 - P4 (可观测性) — ✅ done
-- P5-P8 — pending
+- P5-P6 — pending
 
 **P4 验证结果：**
 - Recovery Ablation: resume_success_rate = 40%, enabled_success_rate = 40%, disabled_success_rate = 10%
@@ -106,7 +106,7 @@
 - P2 (分层记忆系统) — ✅ done（已通过真实模型验证）
 - P3 (工具鲁棒性) — ✅ done
 - P4 (可观测性) — ✅ done
-- P5-P8 — pending
+- P5-P6 — pending
 
 ### 2026-06-30 Session 16 — P2 分层记忆系统
 
@@ -127,7 +127,7 @@
 - P0 (评测框架 + 基础能力) — ✅ done
 - P1 (上下文工程) — ✅ done
 - P2 (分层记忆系统) — ✅ done（已通过真实模型验证）
-- P3-P8 — pending
+- P3-P6 — pending
 
 **P2 验证结果（真实模型）：**
 - 工具调用减少 49%（20 vs 39 次）
@@ -154,7 +154,7 @@
 - P0 (评测框架 + 基础能力) — ✅ done
 - P1 (上下文工程) — ✅ done
 - P2 (分层记忆系统) — ✅ done
-- P3-P8 — pending
+- P3-P6 — pending
 
 **下次从这里开始:**
 - P3 工具鲁棒性（错误恢复 + 重复拦截 + 安全防护）

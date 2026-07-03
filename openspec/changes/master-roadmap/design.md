@@ -99,16 +99,6 @@
 - 子 Agent 有独立的 MemoryManager，执行完销毁
 - 主 Agent 通过 SubAgentTool 的参数指定子 Agent 的工具集
 
-### D6: MCP — 简化实现
-
-**选择：** 实现 MCP 的核心协议（工具描述 + 调用 + 结果），不实现完整的 transport 层。
-
-**替代方案：**
-- A) 完整 MCP 实现 — 工作量大，超出实习项目范围
-- B) 不做 MCP — 面试少一个知识点
-
-**理由：** 面试需要能讲清楚 MCP 是什么、解决什么问题。简化实现（JSON-RPC over stdio）足以演示核心概念，不需要完整的 transport 和 discovery。
-
 ## Risks / Trade-offs
 
 **[R1] 预算制可能过度裁剪重要上下文**

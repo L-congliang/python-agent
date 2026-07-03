@@ -176,14 +176,6 @@ Trace 事件 + 断点续传 + 会话持久化。
 
 System Prompt 优化 + 意图分类 + Plan Mode。
 
-### P7：MCP 协议兼容 ⏳
-
-MCP Server + Client + JSON-RPC + 协议版本协商。
-
-### P8：部署与交付 ⏳
-
-打包 + CLI 入口 + README + 最终评测。
-
 ## 快速开始
 
 ```bash
