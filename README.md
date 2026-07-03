@@ -172,9 +172,24 @@ Trace 事件 + 断点续传 + 会话持久化。
 | SubAgentConstraints | `orchestration/sub_agent.py` | ✅ |
 | TaskManager | `orchestration/message_bus.py` | ✅ |
 
-### P6：意图识别与 Prompt 工程 ⏳
+### P6：意图识别与 Prompt 工程 ✅
 
 System Prompt 优化 + 意图分类 + Plan Mode。
+
+| 功能 | 模块 | 状态 |
+|------|------|------|
+| SystemPromptBuilder | `prompts/builder.py` | ✅ |
+| Plan Mode | `core/loop.py` + `permissions/checker.py` | ✅ |
+| Prompt Ablation 实验 | `experiments/prompt_ablation.py` | ✅ |
+
+**验证结果**：Identity 贡献 +333%，avg_attempts -35%
+
+### 安全加固 ✅
+
+| 功能 | 模块 | 状态 |
+|------|------|------|
+| Shell 环境变量白名单 | `tools/bash.py` | ✅ |
+| CLI 入口点 | `pyproject.toml` | ✅ |
 
 ## 快速开始
 
@@ -185,6 +200,11 @@ cd python-agent
 
 # 环境（uv 自动创建虚拟环境）
 uv sync
+
+# 启动
+agent                    # 直接启动 CLI
+# 或
+python -m agent.main     # 等效方式
 
 # 运行测试
 uv run pytest tests/ -x -v
