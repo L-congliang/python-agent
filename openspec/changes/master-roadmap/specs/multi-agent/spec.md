@@ -1,62 +1,53 @@
 ## ADDED Requirements
 
-### Requirement: Agent Registry
+### Requirement: SubAgentTool
 
-系统 SHALL 维护 Agent Registry，注册多个 agent，每个 agent 有：name、description、capabilities（能力标签）、system_prompt。
+系统 SHALL 提供 SubAgentTool，作为普通工具注册到 ToolRegistry。主 Agent 通过调用此工具派生子任务。
 
-#### Scenario: 注册 agent
+#### Scenario: 主 Agent 派生子 Agent
 
-- **WHEN** 注册 coding_agent，capabilities=["code-edit", "code-search"]
-- **THEN** Registry 中包含该 agent
+- **WHEN** 主 Agent 调用 subagent 工具，参数为 `{"task": "搜索所有 TODO", "tools": ["grep", "glob"]}`
+- **THEN** 系统创建子 Agent，子 Agent 只接收 task 描述，不接收主 Agent 的完整历史
 
-#### Scenario: 列出 agent
+#### Scenario: 子 Agent 执行并返回结果
 
-- **WHEN** 查询 Registry
-- **THEN** 返回所有已注册的 agent 及其 capabilities
+- **WHEN** 子 Agent 执行完成
+- **THEN** 子 Agent 返回结果给主 Agent，子 Agent 的上下文销毁
 
-### Requirement: 意图路由器
+#### Scenario: 主 Agent 指定子 Agent 的工具集
 
-系统 SHALL 根据用户输入，将任务分发到最合适的 agent。路由逻辑：分析用户意图 → 匹配 agent capabilities → 选择最佳匹配。
+- **WHEN** 主 Agent 调用 subagent 工具，指定 `tools` 参数
+- **THEN** 子 Agent 只能使用指定的工具，不能使用未指定的工具
 
-#### Scenario: 代码编辑任务
+### Requirement: 子 Agent 上下文隔离
 
-- **WHEN** 用户说 "修复这个 bug"
-- **THEN** 路由到 coding_agent
+系统 SHALL 确保子 Agent 有独立的上下文，不污染主 Agent 的上下文。
 
-#### Scenario: 代码审查任务
+#### Scenario: 子 Agent 不接收主 Agent 的完整历史
 
-- **WHEN** 用户说 "审查这个 PR"
-- **THEN** 路由到 review_agent
+- **WHEN** 主 Agent 派生子 Agent
+- **THEN** 子 Agent 只接收 task 描述，不接收主 Agent 的消息历史
 
-#### Scenario: fallback
+#### Scenario: 子 Agent 有独立的 MemoryManager
 
-- **WHEN** 没有 agent 匹配用户意图
-- **THEN** 路由到默认 agent（coding_agent）
+- **WHEN** 子 Agent 创建
+- **THEN** 子 Agent 有独立的 MemoryManager，不与主 Agent 共享
 
-### Requirement: Agent 间通信
+#### Scenario: 子 Agent 执行完销毁
 
-系统 SHALL 支持 agent 之间传递上下文和结果。Agent A 可以将结果传给 Agent B 作为输入。
+- **WHEN** 子 Agent 执行完成
+- **THEN** 子 Agent 的上下文（包括 MemoryManager）销毁，不污染主 Agent
 
-#### Scenario: 传递上下文
+### Requirement: task_summary 传递
 
-- **WHEN** coding_agent 完成代码修改，结果需要 review
-- **THEN** coding_agent 的输出作为 review_agent 的输入
+系统 SHALL 支持从主 Agent 上下文中提取必要信息传递给子 Agent。
 
-#### Scenario: 独立执行
+#### Scenario: 传递 task_summary
 
-- **WHEN** agent 不需要其他 agent 的结果
-- **THEN** 独立执行，不等待其他 agent
+- **WHEN** 主 Agent 派生子 Agent，且需要传递上下文
+- **THEN** 系统从主 Agent 的最近消息中提取 task_summary，传递给子 Agent
 
-### Requirement: 编排器
+#### Scenario: task_summary 包含必要信息
 
-系统 SHALL 支持多 agent 顺序/并行执行的控制逻辑。编排器定义 agent 的执行顺序和依赖关系。
-
-#### Scenario: 顺序执行
-
-- **WHEN** 编排器定义 [coding_agent, review_agent]
-- **THEN** coding_agent 先执行，完成后 review_agent 执行
-
-#### Scenario: 并行执行
-
-- **WHEN** 编排器定义 [test_agent_1, test_agent_2] 并行
-- **THEN** 两个 agent 同时执行，等待全部完成
+- **WHEN** 提取 task_summary
+- **THEN** task_summary 包含最近 5 条消息的摘要，不包含完整历史

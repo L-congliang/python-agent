@@ -17,7 +17,7 @@
 - 新增分层记忆系统（Working Memory + File Summaries + Episodic Notes + Retrieval）
 - 新增工具鲁棒性层（错误恢复 + 重复调用拦截 + 路径逃逸防护）
 - 新增可观测性系统（Trace 事件 + Run Report + Checkpoint）
-- 新增多 Agent 路由（Agent Registry + 意图路由器 + 编排器）
+- 新增多 Agent 能力（SubAgentTool + 子 Agent 隔离 + 上下文管理）
 - 优化意图识别（System Prompt + Tool Description + Plan Mode）
 - 新增 MCP 协议兼容层
 
@@ -30,7 +30,7 @@
 - `memory-system`: 分层记忆 — Working Memory、File Summaries、Episodic Notes、Retrieval、Durable Memory
 - `tool-robustness`: 工具鲁棒性 — 错误恢复、重复调用拦截、路径逃逸防护、TaskState 状态机
 - `observability`: 可观测性 — Trace 事件系统、Run Report、Checkpoint、会话持久化
-- `multi-agent`: 多 Agent 路由 — Agent Registry、意图路由器、编排器、Sub-Agent
+- `multi-agent`: 多 Agent — SubAgentTool、子 Agent 隔离、上下文管理
 - `intent-recognition`: 意图识别 — System Prompt 优化、Tool Description、Plan Mode
 - `mcp-protocol`: MCP 协议 — 标准化工具描述、MCP Server、MCP Client
 

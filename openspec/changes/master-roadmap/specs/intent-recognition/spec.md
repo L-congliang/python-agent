@@ -2,17 +2,17 @@
 
 ### Requirement: System Prompt 优化
 
-系统 SHALL 提供结构化的系统提示词，包含：agent 身份、可用工具列表、工具使用指南、输出格式要求、安全规则。
+系统 SHALL 提供结构化的系统提示词，包含：agent 身份、可用工具列表、工具使用指南、SubAgent 使用说明、输出格式要求。
 
 #### Scenario: 完整系统提示词
 
 - **WHEN** 构建 prompt
-- **THEN** system prompt 包含 agent 身份、工具列表、使用指南
+- **THEN** system prompt 包含 agent 身份、工具列表、使用指南、SubAgent 使用说明
 
-#### Scenario: 工具描述准确
+#### Scenario: SubAgent 使用指南
 
-- **WHEN** 模型阅读工具描述
-- **THEN** 能正确理解每个工具的用途和参数
+- **WHEN** 模型阅读 system prompt
+- **THEN** 模型知道何时使用 subagent 工具（搜索大量文件、复杂多步任务、需要独立上下文的任务）
 
 ### Requirement: Tool Description 优化
 
@@ -27,25 +27,6 @@
 
 - **WHEN** 用户说 "修改 main.py 的第 10 行"
 - **THEN** 模型选择 edit_file 工具（不是 write_file）
-
-### Requirement: 意图分类
-
-系统 SHALL 支持将用户输入分类为：code-edit（代码编辑）、code-search（代码搜索）、question（问答）、chat（闲聊）。
-
-#### Scenario: 分类代码编辑
-
-- **WHEN** 用户输入 "修复 bug 在 line 42"
-- **THEN** 分类为 code-edit
-
-#### Scenario: 分类代码搜索
-
-- **WHEN** 用户输入 "找到所有使用 foo 函数的地方"
-- **THEN** 分类为 code-search
-
-#### Scenario: 分类问答
-
-- **WHEN** 用户输入 "这个项目是做什么的"
-- **THEN** 分类为 question
 
 ### Requirement: Plan Mode
 

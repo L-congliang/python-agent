@@ -81,15 +81,23 @@
 
 **理由：** 本地文件存储零依赖，trace.jsonl 格式可以逐行解析，report.json 是完整的运行快照。面试时可以展示完整的可观测性设计。
 
-### D5: 多 Agent — Registry + Router 模式
+### D5: 多 Agent — 主 Agent 编排模式
 
-**选择：** Agent Registry 注册多个 agent，Router 根据意图分发。
+**选择：** 主 Agent 自己判断是否派子 Agent，SubAgentTool 作为普通工具注册。
 
 **替代方案：**
-- A) 单 agent 处理所有任务 — 简单但能力有限
+- A) 独立 Router + Orchestrator — 解耦但复杂，多一层 LLM 调用
 - B) 编排框架（LangGraph）— 过重
 
-**理由：** Registry + Router 是最简单的多 agent 模式，适合 CLI 工具。每个 agent 专注一个领域（coding / review / test），Router 做意图分类后分发。
+**理由：** 
+1. 对齐 Claude Code 设计，主 Agent 有完整上下文，判断更准确
+2. SubAgentTool 作为普通工具，复用现有 Tool Protocol，无需新增组件
+3. 子 Agent 有独立上下文，执行完销毁，避免污染主 Agent
+
+**关键设计：**
+- 子 Agent 只接收 task 描述，不接收主 Agent 完整历史
+- 子 Agent 有独立的 MemoryManager，执行完销毁
+- 主 Agent 通过 SubAgentTool 的参数指定子 Agent 的工具集
 
 ### D6: MCP — 简化实现
 
