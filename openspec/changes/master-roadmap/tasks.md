@@ -139,25 +139,31 @@
 - 全量测试: 605 passed, 3 skipped
 - 测试报告: `docs/test-reports/P4-recovery-ablation.md`
 
-## Phase 5: 多 Agent 路由
+## Phase 5: 多 Agent ✅
 
-- [ ] 5.1 创建 `src/agent/orchestration/` 模块结构
-- [ ] 5.2 实现 AgentRegistry（注册多个 agent）
-- [ ] 5.3 实现意图路由器（用户意图 → agent capabilities 匹配）
-- [ ] 5.4 实现 Agent 间通信（上下文和结果传递）
-- [ ] 5.5 实现编排器（顺序/并行执行控制）
-- [ ] 5.6 实现 Sub-Agent（spawn 子 agent）
-- [ ] 5.7 编写多 Agent 测试
-- [ ] 5.8 运行 benchmark 对比 Phase 4
+- [x] 5.1 创建 `src/agent/orchestration/` 模块结构（子 Agent 管理）
+- [x] 5.2 实现 SubAgentTool（作为普通工具注册到 ToolRegistry）
+- [x] 5.3 实现子 Agent 上下文隔离（独立 MemoryManager，执行完销毁）
+- [x] 5.4 实现 task_summary 传递（从主 Agent 上下文提取必要信息）
+- [x] 5.5 将 SubAgentTool 注册到 AgentLoop
+- [x] 5.6 编写多 Agent 测试
+- [x] 5.7 运行 benchmark 对比 Phase 4
 
-## Phase 6: 意图识别与 Prompt 工程
+## Phase 6: 意图识别与 Prompt 工程 ✅
 
-- [ ] 6.1 优化 System Prompt（结构化、包含工具指南）
-- [ ] 6.2 优化 Tool Description（精准描述、示例）
-- [ ] 6.3 实现意图分类（code-edit/code-search/question/chat）
-- [ ] 6.4 实现 Plan Mode（先规划再执行）
-- [ ] 6.5 编写意图识别测试
-- [ ] 6.6 运行 benchmark 对比 Phase 5
+- [x] 6.1 优化 System Prompt（结构化、包含 SubAgent 使用指南）
+- [x] 6.2 优化 Tool Description（精准描述、示例）
+- [x] 6.3 实现 Plan Mode（对齐 Claude Code 的 EnterPlanMode）
+- [x] 6.4 编写意图识别测试
+- [x] 6.5 运行 benchmark 对比 Phase 5
+
+### 验证指标（Prompt Ablation + Benchmark 结果）
+- Prompt Ablation: baseline 13.6% → +identity 59.1%（+333%）
+- 最优配置: +identity（Identity 部分贡献最大）
+- Benchmark pass_rate: 40%（与 Phase 0 基线持平，未退化）
+- Benchmark avg_attempts: 1.7（-35%，效率提升）
+- 测试报告: `docs/test-reports/P6-prompt-ablation.md`
+- 测试报告: `docs/test-reports/P6-benchmark.md`
 
 ## Phase 7: MCP 协议兼容
 
