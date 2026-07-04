@@ -62,7 +62,7 @@
 | 配置 | mean | min | max | range | std |
 |------|------|-----|-----|-------|-----|
 | memory_on | 100% | 100% | 100% | 0% | 0.0% |
-| memory_off | 97.2% | 93% | 100% | 7% | 3.4% |
+| memory_off | 98.6% | 93% | 100% | 7% | 2.8% |
 | memory_irrelevant | 98.6% | 93% | 100% | 7% | 2.8% |
 
 ### repeated_reads
@@ -70,65 +70,65 @@
 | 配置 | mean | min | max | range | std |
 |------|------|-----|-----|-------|-----|
 | memory_on | 1.2 | 0 | 3 | 3 | 1.1 |
-| memory_off | 0.4 | 0 | 1 | 1 | 0.5 |
-| memory_irrelevant | 1.4 | 1 | 3 | 2 | 0.9 |
+| memory_off | 0.2 | 0 | 1 | 1 | 0.4 |
+| memory_irrelevant | 1.0 | 1 | 1 | 0 | 0.0 |
 
 ### memory_hit_rate
 
 | 配置 | mean | min | max | range | std |
 |------|------|-----|-----|-------|-----|
 | memory_on | 48.0% | 40% | 50% | 10% | 4.5% |
-| memory_off | 58.0% | 50% | 60% | 10% | 4.5% |
-| memory_irrelevant | 48.0% | 40% | 60% | 20% | 8.4% |
+| memory_off | 56.0% | 50% | 60% | 10% | 5.5% |
+| memory_irrelevant | 52.0% | 40% | 70% | 30% | 13.0% |
 
 ### avg_tool_calls
 
 | 配置 | mean | min | max | range | std |
 |------|------|-----|-----|-------|-----|
-| memory_on | 2.4 | 2.2 | 2.6 | 0.4 | 0.1 |
+| memory_on | 2.3 | 2.0 | 2.6 | 0.6 | 0.2 |
 | memory_off | 2.1 | 1.9 | 2.3 | 0.4 | 0.2 |
-| memory_irrelevant | 2.3 | 2.1 | 2.5 | 0.4 | 0.1 |
+| memory_irrelevant | 2.2 | 2.0 | 2.5 | 0.5 | 0.2 |
 
 ### avg_duration
 
 | 配置 | mean | min | max | range | std |
 |------|------|-----|-----|-------|-----|
-| memory_on | 14.7s | 12.1s | 18.0s | 5.9s | 2.3s |
-| memory_off | 12.8s | 11.7s | 13.9s | 2.2s | 0.9s |
-| memory_irrelevant | 15.2s | 12.3s | 20.1s | 7.8s | 3.0s |
+| memory_on | 14.4s | 12.1s | 16.7s | 4.6s | 1.7s |
+| memory_off | 13.0s | 11.7s | 13.9s | 2.2s | 0.6s |
+| memory_irrelevant | 15.2s | 12.0s | 20.1s | 8.1s | 3.0s |
 
 ## 四、关键发现
 
 ### 1. 正确率 (correct_rate)
 
 - **memory_on: 100%** — 5 轮全部满分，稳定无波动
-- memory_off: 97.2% — Round 3 和 Round 5 各有 1 个任务失败（13/14）
-- memory_irrelevant: 98.6% — Round 3 有 1 个任务失败
+- memory_off: 98.6% — 有 1 轮出现 1 个任务失败（93%）
+- memory_irrelevant: 98.6% — 有 1 轮出现 1 个任务失败（93%）
 
-**结论**: memory_on 的正确率比 memory_off 高 **2.8 个百分点**，但幅度较小（< 8pp 阈值）。
+**结论**: memory_on 的正确率比 memory_off 高 **1.4 个百分点**，但幅度较小（< 8pp 阈值）。
 
 ### 2. 重复读取 (repeated_reads)
 
 - memory_on: 1.2 次（平均）
-- memory_off: 0.4 次
-- memory_irrelevant: 1.4 次
+- memory_off: 0.2 次
+- memory_irrelevant: 1.0 次
 
-**意外发现**: memory_off 的 repeated_reads 反而最低。这与预期相反（预期 memory_on 应该更少重复读取）。
+**意外发现**: memory_off 的 repeated_reads 反而最低（0.2 vs 1.2）。这与预期相反（预期 memory_on 应该更少重复读取）。
 
-**可能原因**: 当前任务集中，fact_lookup 类任务不需要记忆也能直接回答；memory_on 的模型可能因为记忆注入而多读了一些文件。
+**可能原因**: 当前任务集中，fact_lookup 类任务不需要记忆也能直接回答；memory_on 的模型可能因为记忆注入而多读了一些文件来验证。
 
 ### 3. 记忆命中率 (memory_hit_rate)
 
 - memory_on: 48% — 10 个 eligible 任务中约 5 个命中
-- memory_off: 58% — 关闭记忆反而命中率更高
-- memory_irrelevant: 48%
+- memory_off: 56% — 关闭记忆反而命中率更高
+- memory_irrelevant: 52%
 
 **异常**: memory_off 的 memory_hit_rate 高于 memory_on，与预期相反。
 
 ### 4. 效率指标
 
-- avg_tool_calls: memory_off (2.1) < memory_irrelevant (2.3) < memory_on (2.4)
-- avg_duration: memory_off (12.8s) < memory_on (14.7s) < memory_irrelevant (15.2s)
+- avg_tool_calls: memory_off (2.1) < memory_irrelevant (2.2) < memory_on (2.3)
+- avg_duration: memory_off (13.0s) < memory_on (14.4s) < memory_irrelevant (15.2s)
 
 **结论**: memory_off 在效率上反而最优。
 
@@ -164,8 +164,8 @@
 | 条件 | 状态 |
 |------|------|
 | 跑满至少 5 轮 | ✅ 5 轮完成 |
-| memory_on 平均结果持续优于 memory_off | ❌ correct_rate 仅高 2.8pp，repeated_reads 和 memory_hit_rate 反而更差 |
-| 收益幅度大于波动幅度 | ❌ correct_rate 差异 (2.8pp) < 波动幅度 (7% range) |
+| memory_on 平均结果持续优于 memory_off | ❌ correct_rate 仅高 1.4pp，repeated_reads 和 memory_hit_rate 反而更差 |
+| 收益幅度大于波动幅度 | ❌ correct_rate 差异 (1.4pp) < 波动幅度 (7% range) |
 | 趋势方向一致 | ❌ repeated_reads 和 memory_hit_rate 方向反转 |
 
 **结论: 不满足"可写入效果型数字"的标准。**
@@ -181,7 +181,7 @@
 
 ### ❌ 不满足稳定标准
 
-- ~~memory_on correct_rate 较 memory_off 提升 X 个百分点~~（仅 2.8pp，低于 8-10pp 阈值）
+- ~~memory_on correct_rate 较 memory_off 提升 X 个百分点~~（仅 1.4pp，低于 8-10pp 阈值）
 - ~~repeated_reads 降低 X%~~（方向反转）
 - ~~avg_tool_calls 或 avg_duration 优化 X%~~（memory_off 反而更优）
 
@@ -202,4 +202,4 @@
 
 **机制描述**: 建立 memory_on/off/irrelevant 三组对照评测体系，5 轮正式量化实验，覆盖 14 个任务 × 7 类场景。
 
-**结果描述**: 当前任务集中，记忆系统对正确率的提升幅度较小（2.8pp），低于可写入阈值。需要优化任务集以增加对记忆的依赖度。
+**结果描述**: 当前任务集中，记忆系统对正确率的提升幅度较小（1.4pp），低于可写入阈值。需要优化任务集以增加对记忆的依赖度。
