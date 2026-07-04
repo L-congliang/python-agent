@@ -106,6 +106,27 @@ class SystemPromptBuilder:
             "- grep 比 bash grep 更好，不要用 bash grep"
         )
 
+    @classmethod
+    def build_prefix(cls, plan_mode: bool = False) -> str:
+        """构建静态前缀（Identity + Behavior + Tool Guide）
+
+        不包含 dynamic context（memory、tools 列表、subagent 指南）。
+        供 ContextManager 使用，作为 prompt 组装的 prefix section。
+
+        Args:
+            plan_mode: 是否处于 Plan Mode
+
+        Returns:
+            静态前缀文本
+        """
+        parts: list[str] = []
+        if plan_mode:
+            parts.append(cls.build_plan_mode_marker())
+        parts.append(cls.build_identity())
+        parts.append(cls.build_behavior_guidelines())
+        parts.append(cls.build_tool_selection_guide())
+        return "\n\n".join(parts)
+
     @staticmethod
     def build_plan_mode_marker() -> str:
         """构建 Plan Mode 标记
