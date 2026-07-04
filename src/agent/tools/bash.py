@@ -176,6 +176,8 @@ def execute_bash(input: dict, context: ToolUseContext) -> ToolResult:
             [shell_exe, shell_arg, command],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             cwd=workdir,
             env=_build_safe_env(),

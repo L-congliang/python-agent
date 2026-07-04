@@ -86,6 +86,8 @@ class WorkspaceSnapshot:
                 cwd=self._workspace_root,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
             )
             if branch.returncode == 0:
@@ -97,6 +99,8 @@ class WorkspaceSnapshot:
                 cwd=self._workspace_root,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
             )
             if log.returncode == 0:

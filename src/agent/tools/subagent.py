@@ -93,6 +93,8 @@ def _create_worktree(task_id: str, workspace_root: str | None = None) -> str | N
             ["git", "worktree", "add", str(worktree_dir), "-b", branch_name],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
 
@@ -119,6 +121,8 @@ def _cleanup_worktree(worktree_path: str) -> None:
             ["git", "worktree", "remove", worktree_path, "--force"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
 

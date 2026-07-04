@@ -249,9 +249,15 @@ class MimoClient:
                 logger.warning("Connection failed, retrying in %.1fs (attempt %d/%d)", wait, attempt + 1, self.config.max_retries)
                 time.sleep(wait)
             except anthropic.APIError as e:
-                # 其他 API 错误不重试
-                logger.error("API error: %s", str(e))
-                raise
+                # mimo 的 429 可能走 APIError 而非 RateLimitError
+                if "429" in str(e) and attempt < self.config.max_retries - 1:
+                    last_exception = e
+                    wait = self.config.retry_delay * (2 ** attempt)
+                    logger.warning("Rate limited (APIError), retrying in %.1fs (attempt %d/%d)", wait, attempt + 1, self.config.max_retries)
+                    time.sleep(wait)
+                else:
+                    logger.error("API error: %s", str(e))
+                    raise
 
         # 不应该走到这里，但为了类型安全
         raise last_exception  # type: ignore[misc]

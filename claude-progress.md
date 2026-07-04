@@ -1,5 +1,28 @@
 # 进度日志
 
+## Session 23 — 2026-07-04 编码修复 + 首轮真实评测
+
+**功能**: Windows 编码问题修复 + 记忆实验首轮三轮运行
+**状态**: ✅ 已完成
+
+### 做了什么
+
+1. **修复 Windows subprocess 编码问题** — 所有 `subprocess.run(text=True)` 加了 `encoding="utf-8", errors="replace"`
+   - 涉及文件：bash.py, grep.py, subagent.py, workspace.py, evaluator.py（共 6 处）
+   - 根因：Windows 中文系统默认 GBK 解码 UTF-8 输出 → UnicodeDecodeError → 工具返回 None
+2. **MimoClient 429 重试增强** — mimo API 的 429 走 `APIError` 而非 `RateLimitError`，补充捕获
+3. **实验框架加延迟** — 任务间 3s、配置间 5s，避免 429 限流
+4. **三轮真实评测完成** — 747 测试通过，实验结果见 `docs/test-reports/P2-memory-experiment.md`
+
+### 关键发现
+
+- 评测框架稳定可靠，三轮结果波动极小
+- 当前 6 个任务太简单，三组正确率都是 100%，无法体现记忆差异
+- memory_irrelevant 有轻微开销（avg_tool_calls +0.6）
+- 下一步：升级任务集，设计"不用记忆会吃亏"的任务
+
+---
+
 ## Session 22 — 2026-07-04 评测去假（Phase 2）
 
 **功能**: P2 记忆系统 — 评测去假

@@ -447,10 +447,14 @@ class MemoryExperiment:
             tasks = MEMORY_TASKS
 
         results = []
-        for config in self._configs:
+        for i, config in enumerate(self._configs):
             logger.info("Running config: %s", config.name)
             result = self._run_single_config(config, tasks)
             results.append(result)
+
+            # 配置间延迟
+            if i < len(self._configs) - 1 and self._use_real_model:
+                time.sleep(5)
 
         return results
 
@@ -469,7 +473,7 @@ class MemoryExperiment:
         total_duration = 0.0
         eligible_memory_tasks = 0
 
-        for task in tasks:
+        for i, task in enumerate(tasks):
             logger.info("  Running task: %s", task.task_id)
             result = self._run_single_task(config, task)
             task_results.append(result)
@@ -484,6 +488,10 @@ class MemoryExperiment:
             if mh >= 0:
                 total_memory_hits += mh
                 eligible_memory_tasks += 1
+
+            # 任务间延迟，避免 429
+            if i < len(tasks) - 1 and self._use_real_model:
+                time.sleep(3)
 
         duration = time.time() - start_time
         n = len(tasks) if tasks else 1
@@ -537,9 +545,40 @@ class MemoryExperiment:
         config: MemoryConfig,
         task: MemoryTask,
     ) -> dict[str, Any]:
-        """使用真实模型运行任务"""
+        """使用真实模型运行任务（含 429 重试）"""
         start_time = time.time()
+        max_retries = 3
 
+        for attempt in range(max_retries):
+            try:
+                return self._run_real_task_inner(config, task, start_time)
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    wait = 5 * (2 ** attempt)
+                    logger.warning("429 rate limited, retrying in %ds (attempt %d/%d)", wait, attempt + 1, max_retries)
+                    time.sleep(wait)
+                else:
+                    logger.error("Task %s failed: %s", task.task_id, e)
+                    return {
+                        "task_id": task.task_id,
+                        "category": task.category,
+                        "correct": False,
+                        "repeated_reads": 0,
+                        "memory_hits": -1,
+                        "tool_calls": 0,
+                        "duration": time.time() - start_time,
+                        "result_preview": "",
+                    }
+        # unreachable
+        return {}  # type: ignore[return-value]
+
+    def _run_real_task_inner(
+        self,
+        config: MemoryConfig,
+        task: MemoryTask,
+        start_time: float,
+    ) -> dict[str, Any]:
+        """单次任务执行（不含重试）"""
         # 准备工作区
         workspace_root = self._prepare_workspace(task)
 
