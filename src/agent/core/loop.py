@@ -959,33 +959,81 @@ class AgentLoop:
             self._config.on_notify(message)
 
     def _build_system_prompt(self) -> str:
-        """构建系统提示
+        """构建系统提示（通过 ContextManager 预算裁剪）
 
-        使用 SystemPromptBuilder 组装结构化 prompt：
-        1. Identity（agent 身份定义）
-        2. Behavioral Guidelines（通用原则 + 具体规则）
-        3. Tool Selection Guide（工具选择指南）
-        4. Dynamic Context（记忆、工具列表、SubAgent）
-
-        config.system_prompt 和 config.append_system_prompt 作为额外内容追加。
+        V1 流程：
+        1. 静态前缀（identity + behavior + tool_guide）来自 SystemPromptBuilder.build_prefix()
+        2. 工具列表来自 registry
+        3. 记忆通过 MemoryManager.assemble_layered() 分层组装
+        4. 历史通过 format_history() 转为结构化摘要
+        5. ContextManager.build_prompt() 统一预算裁剪和组装
         """
         from agent.prompts.builder import SystemPromptBuilder
+        from agent.context.history_formatter import format_history
 
-        # 组装额外 prompt（用户自定义部分）
+        # 1. 静态前缀
+        prefix = SystemPromptBuilder.build_prefix(plan_mode=self._config.plan_mode)
+
+        # 2. 额外 prompt（用户自定义部分）
         extra_parts: list[str] = []
         if self._config.system_prompt:
             extra_parts.append(self._config.system_prompt)
         if self._config.append_system_prompt:
             extra_parts.append(self._config.append_system_prompt)
-        extra_prompt = "\n\n".join(extra_parts)
+        if extra_parts:
+            prefix += "\n\n" + "\n\n".join(extra_parts)
 
-        return SystemPromptBuilder.build(
-            memory=self._memory if self._config.memory_enabled else None,
-            registry=self._registry,
-            subagent_registered=self._registry.get("subagent") is not None,
-            plan_mode=self._config.plan_mode,
-            extra_prompt=extra_prompt,
+        # 3. 工具列表
+        tools = self._format_tools_text()
+
+        # 4. 记忆（分层组装）
+        memory = ""
+        if self._config.memory_enabled and self._memory:
+            query = self._memory.get_task() or ""
+            memory_budget = self._context_manager._budget.get_section("memory")
+            max_tokens = memory_budget.max_tokens if memory_budget else 1600
+            memory = self._memory.assemble_layered(query, max_tokens=max_tokens)
+
+        # 5. 历史（结构化摘要）
+        history = format_history(self._messages)
+
+        # 6. 当前请求（最近一条 user 消息）
+        current_request = ""
+        for msg in reversed(self._messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    current_request = content
+                break
+
+        # 7. ContextManager 组装
+        prompt, metadata = self._context_manager.build_prompt(
+            prefix=prefix,
+            tools=tools,
+            memory=memory,
+            history=history,
+            current_request=current_request,
         )
+        self._last_context_metadata = metadata
+
+        return prompt
+
+    def _format_tools_text(self) -> str:
+        """格式化工具列表为文本"""
+        tools = self._registry.get_enabled_tools()
+        if not tools:
+            return ""
+        parts = ["可用工具:"]
+        for tool in tools:
+            parts.append(f"- {tool.name}: {tool.description}")
+        # SubAgent 指南
+        if self._registry.get("subagent") is not None:
+            parts.append(
+                "\n## SubAgent 使用指南\n"
+                "当任务可以并行执行、需要独立上下文、或涉及大量文件搜索时，"
+                "使用 subagent 工具派生子 Agent。"
+            )
+        return "\n".join(parts)
 
     def _parse_content_blocks(
         self, blocks: list[dict[str, Any]]
