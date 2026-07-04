@@ -106,6 +106,9 @@ class LoopConfig:
     # 多 Agent 配置
     enable_subagent: bool = True  # 是否启用 SubAgentTool
 
+    # 记忆系统配置
+    memory_enabled: bool = True  # 是否启用记忆系统（用于 memory_on/off 对照实验）
+
 
 class AgentLoop:
     """Agent 主循环
@@ -263,6 +266,7 @@ class AgentLoop:
             enable_trace=False,  # 嵌套到父 Agent 的 trace
             enable_checkpoint=False,
             workspace_root=parent._config.workspace_root,
+            memory_enabled=parent._config.memory_enabled,
         )
 
         # 5. 创建子 AgentLoop
@@ -321,8 +325,8 @@ class AgentLoop:
                 f"{agent_type_def.description}"
             )
 
-        # 父 Agent 的记忆（只读继承）
-        parent_memory = parent._memory.render_compact()
+        # 父 Agent 的记忆（只读继承，受 memory_enabled 开关控制）
+        parent_memory = parent._memory.render_compact() if parent._config.memory_enabled else ""
         if parent_memory:
             parts.append(f"Parent agent context:\n{parent_memory}")
 
@@ -426,6 +430,26 @@ class AgentLoop:
         self._repeat_detector.reset()
         self._retry_limiter.reset()
 
+        # 记忆：记录当前任务
+        if self._config.memory_enabled:
+            self._memory.set_task(user_input)
+
+        try:
+            return self._run_inner(user_input)
+        finally:
+            # 记忆：持久化（确保 durable memory 不丢失）
+            if self._config.memory_enabled:
+                self._memory.save()
+
+    def _run_inner(self, user_input: str) -> str:
+        """run() 的内部实现（被 try/finally 包裹）
+
+        Args:
+            user_input: 用户输入
+
+        Returns:
+            模型最终回复
+        """
         # 重新打开 trace（如果已关闭）
         if self._config.enable_trace and self._trace and self._trace._file.closed:
             self._run_dir = self._run_store.create_run_dir()
@@ -633,9 +657,26 @@ class AgentLoop:
         self._repeat_detector.reset()
         self._retry_limiter.reset()
 
-        # 添加用户消息
-        self._messages.append({"role": "user", "content": user_input})
+        # 记忆：记录当前任务
+        if self._config.memory_enabled:
+            self._memory.set_task(user_input)
 
+        try:
+            # 添加用户消息
+            self._messages.append({"role": "user", "content": user_input})
+
+            yield from self._run_stream_inner(user_input)
+        finally:
+            # 记忆：持久化（确保 durable memory 不丢失）
+            if self._config.memory_enabled:
+                self._memory.save()
+
+    def _run_stream_inner(self, user_input: str) -> Iterator[str]:
+        """run_stream() 的内部实现（被 try/finally 包裹）
+
+        Yields:
+            文本 chunk
+        """
         while self._turn_count < self._config.max_turns:
             # 检查中断
             if self._abort_controller.is_aborted:
@@ -927,7 +968,7 @@ class AgentLoop:
         extra_prompt = "\n\n".join(extra_parts)
 
         return SystemPromptBuilder.build(
-            memory=self._memory,
+            memory=self._memory if self._config.memory_enabled else None,
             registry=self._registry,
             subagent_registered=self._registry.get("subagent") is not None,
             plan_mode=self._config.plan_mode,
@@ -988,6 +1029,7 @@ class AgentLoop:
             messages=self._messages,
             debug=self._config.debug,
             verbose=self._config.verbose,
+            cwd=self._config.workspace_root or ".",
             agent_loop=self,
         )
 
@@ -1009,6 +1051,14 @@ class AgentLoop:
                 logger.warning("Repeated call detected: %s - %s", tool_call.name, repeat_msg)
                 results.append(ToolResult(output=repeat_msg, is_error=True))
                 self._retry_limiter.record_failure()
+                # 记忆：记录重复调用，帮助下一轮 prompt 感知循环
+                if self._config.memory_enabled:
+                    args_preview = str(tool_call.arguments)[:80]
+                    self._memory.append_note(
+                        text=f"重复调用: {tool_call.name}({args_preview})",
+                        tags=["repeat", tool_call.name],
+                        source="repeat_detector",
+                    )
                 continue
 
             # 检查路径逃逸（仅文件相关工具）
@@ -1047,6 +1097,11 @@ class AgentLoop:
             )
             duration_ms = int((time.time() - start_time) * 1000)
             results.append(result)
+
+            # 记忆写入钩子
+            if self._config.memory_enabled:
+                self._record_memory_side_effects(tool_call, result, context)
+
             self._tool_call_count += 1
             self._task_state.increment_tool_steps()
 
@@ -1142,3 +1197,129 @@ class AgentLoop:
             "role": "user",
             "content": tool_result_blocks,
         })
+
+    # ========== 记忆写入钩子 ==========
+
+    def _record_memory_side_effects(
+        self,
+        tool_call: ToolCall,
+        result: ToolResult,
+        context: ToolUseContext,
+    ) -> None:
+        """工具执行后的统一记忆写入入口
+
+        只处理文件相关工具（read/write/edit），其他工具不触发记忆写入。
+        """
+        paths = self._resolve_memory_paths(tool_call, context)
+        if paths is None:
+            return
+        abs_path, display_path = paths
+
+        if result.is_error:
+            self._memory_after_tool_error(tool_call, result, display_path)
+        else:
+            self._memory_after_tool_success(tool_call, result, abs_path, display_path, context)
+
+    def _resolve_memory_paths(
+        self,
+        tool_call: ToolCall,
+        context: ToolUseContext,
+    ) -> tuple[str, str] | None:
+        """解析工具调用中的文件路径
+
+        Args:
+            tool_call: 工具调用
+            context: 工具执行上下文
+
+        Returns:
+            (abs_path, display_path) 或 None（非文件工具）
+            abs_path: 绝对路径，用于 os.stat / file_read_state
+            display_path: 相对路径，用于记忆 key
+        """
+        if tool_call.name not in ("read", "write", "edit"):
+            return None
+
+        file_path = (
+            tool_call.arguments.get("file_path")
+            or tool_call.arguments.get("path", "")
+        )
+        if not file_path:
+            return None
+
+        import os
+        abs_path = file_path
+        if not os.path.isabs(abs_path):
+            abs_path = os.path.join(context.cwd, abs_path)
+        abs_path = os.path.abspath(abs_path)
+
+        # 优先存相对 workspace_root 的路径
+        display_path = file_path
+        workspace = self._config.workspace_root
+        if workspace:
+            try:
+                rel = os.path.relpath(abs_path, workspace)
+                if not rel.startswith(".."):
+                    display_path = rel
+            except ValueError:
+                pass  # 跨盘符，回退到原始路径
+
+        return abs_path, display_path
+
+    def _memory_after_tool_success(
+        self,
+        tool_call: ToolCall,
+        result: ToolResult,
+        abs_path: str,
+        display_path: str,
+        context: ToolUseContext,
+    ) -> None:
+        """工具执行成功后的记忆写入
+
+        read: touch_file + update_file_summary
+        write/edit: touch_file（摘要在下次 read 时自然更新）
+        """
+        import os
+
+        self._memory.touch_file(display_path)
+
+        if tool_call.name == "read":
+            # 从 file_read_state 取原始内容（非展示层带行号的文本）
+            cached = context.file_read_state.get(abs_path)
+            if cached is not None:
+                raw_content, cached_mtime = cached
+            else:
+                # 缓存未命中，重新读取
+                try:
+                    with open(abs_path, encoding="utf-8", errors="replace") as f:
+                        raw_content = f.read()
+                except OSError:
+                    return
+
+            try:
+                stat = os.stat(abs_path)
+                # 用绝对路径作为 key，确保 is_fresh() 的 os.stat 能正确解析
+                self._memory.update_file_summary(
+                    file_path=abs_path,
+                    content=raw_content,
+                    file_mtime=stat.st_mtime,
+                    file_size=stat.st_size,
+                )
+            except OSError:
+                pass  # 文件可能已被删除
+
+    def _memory_after_tool_error(
+        self,
+        tool_call: ToolCall,
+        result: ToolResult,
+        display_path: str,
+    ) -> None:
+        """工具执行失败后的记忆写入
+
+        只记 read/write/edit 的错误，避免噪声。
+        """
+        error_msg = str(result.output)[:200]
+        self._memory.append_note(
+            text=f"工具 {tool_call.name} 失败: {display_path} — {error_msg}",
+            tags=["error", tool_call.name],
+            source="tool_execution",
+        )
