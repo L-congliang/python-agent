@@ -1,5 +1,46 @@
 # 进度日志
 
+## Session 24 — 2026-07-04 任务集升级 + 正式对照评测
+
+**功能**: P2 记忆系统 — 任务集升级（4 类高难度任务）
+**状态**: ✅ 已完成
+
+### 做了什么
+
+1. **新增 4 类高难度任务**（共 8 个新任务，总计 14 个）
+   - cross_round_recall (2): setup 读文件 → 主阶段只提问，memory_on 不 reread
+   - cross_file_dep (2): 读 A+B → 改 A，正确修改依赖 B 的信息
+   - multi_round_edit (2): 多步修改同组文件，前一步是后一步的前提
+   - noise (2): 注入噪声 → 问正确对象，memory_irrelevant 应被干扰
+2. **新增 7 个 fixture 文件**：api_config.py, config2.py, api2.py, service.py, client.py, database.py, cache.py
+3. **任务间延迟增加到 8s，配置间 15s**，防 429 限流
+4. **正式三轮对照评测完成**
+
+### 关键结果
+
+| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls |
+|------|-------------|----------------|-----------------|----------------|
+| memory_on | **100%** | 1 | 50% (10 eligible) | 2.2 |
+| memory_off | 86% | 1 | 50% (10 eligible) | 2.2 |
+| memory_irrelevant | 93% | 2 | 60% (10 eligible) | 2.3 |
+
+### 关键发现
+
+- **memory_on 正确率 100% vs memory_off 86%** — 新任务集成功拉开了差距
+- **memory_off 失败的任务**：recall_api_key、noise_db_config
+- **noise 任务验证了设计意图**：memory_off 在噪声环境下更容易出错
+- **memory_irrelevant repeated_reads=2**：噪声记忆导致额外重复读取
+
+### 可写进简历
+
+- "建立 memory_on/off/irrelevant 三组真实对照评测体系"
+- "14 个任务覆盖 7 类场景，memory_on 正确率 100% vs memory_off 86%"
+- "噪声记忆导致 repeated_reads 上升（2 vs 1）"
+
+---
+
+## Session 23 — 2026-07-04 编码修复 + 首轮真实评测
+
 ## Session 23 — 2026-07-04 编码修复 + 首轮真实评测
 
 **功能**: Windows 编码问题修复 + 记忆实验首轮三轮运行
