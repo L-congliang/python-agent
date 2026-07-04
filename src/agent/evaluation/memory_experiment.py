@@ -376,8 +376,8 @@ def _compute_memory_hit(
     for f in task.target_files:
         target_abs.add(os.path.normpath(os.path.join(workspace_root, f)))
 
-    # 统计主任务阶段（所有 tool_history 都是主任务阶段的，
-    # 因为 setup_turns 用的是独立的 loop.run()）
+    # 统计主任务阶段（tool_history 在 setup_turns 后已清空，
+    # 此处只有主任务阶段的工具调用）
     main_reads: set[str] = set()
     for entry in tool_history:
         if entry.get("tool_name") != "read":
@@ -545,12 +545,12 @@ class MemoryExperiment:
 
         try:
             loop = _create_real_agent_loop(
-                memory_enabled=config.use_memory and not config.use_irrelevant_memory,
+                memory_enabled=config.use_memory,
                 workspace_root=workspace_root,
                 max_turns=self._max_turns,
             )
 
-            # 注入无关记忆
+            # 注入无关记忆（memory_enabled 必须为 True，否则噪声不会进 prompt）
             if config.use_irrelevant_memory:
                 loop.memory.set_task("这是一个无关的任务：处理用户登录页面的 CSS 样式")
                 for i in range(5):
@@ -562,6 +562,9 @@ class MemoryExperiment:
             # 跑 setup_turns（前置对话）
             for setup_prompt in task.setup_turns:
                 loop.run(setup_prompt)
+
+            # 清空 tool_history，确保主阶段统计不被 setup_turns 污染
+            loop._tool_history.clear()
 
             # 跑主任务
             result_text = loop.run(task.prompt)
