@@ -40,6 +40,11 @@
 
 ContextMetadata 显示零截断，所有 section 都在预算内。
 
+### 沉淀
+
+- 设计复盘：`docs/solutions/memory-v1-context-manager-integration.md`
+- 面试表述：`docs/solutions/memory-system-interview-talking-points.md`
+
 ---
 
 ## Session 24 — 2026-07-04 任务集升级 + 正式对照评测
