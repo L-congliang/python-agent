@@ -189,8 +189,30 @@ class MimoClient:
                         "output_tokens": final_message.usage.output_tokens,
                     }
 
+        def _create_stream() -> Iterator[str]:
+            """带重试的流式生成器：429 时重建连接"""
+            max_retries = self.config.max_retries
+            for attempt in range(max_retries):
+                try:
+                    gen = _stream()
+                    yield from gen
+                    return  # 成功完成
+                except anthropic.RateLimitError as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    wait = self.config.retry_delay * (2 ** attempt)
+                    logger.warning("Stream rate limited, retrying in %.1fs (attempt %d/%d)", wait, attempt + 1, max_retries)
+                    time.sleep(wait)
+                except anthropic.APIError as e:
+                    if "429" in str(e) and attempt < max_retries - 1:
+                        wait = self.config.retry_delay * (2 ** attempt)
+                        logger.warning("Stream rate limited (APIError), retrying in %.1fs (attempt %d/%d)", wait, attempt + 1, max_retries)
+                        time.sleep(wait)
+                    else:
+                        raise
+
         try:
-            result.text = _stream()
+            result.text = _create_stream()
             elapsed = time.monotonic() - start_time
             logger.info("API stream setup: %.2fs", elapsed)
         except Exception:
