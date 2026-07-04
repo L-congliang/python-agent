@@ -153,6 +153,8 @@ class AgentLoop:
         self._tool_call_count: int = 0
         self._abort_controller = AbortController()
         self._file_read_state = FileReadState()
+        # 工具执行历史（用于评测统计）
+        self._tool_history: list[dict[str, Any]] = []
         # Token 追踪
         self._total_tokens: int = 0
         self._compressor = ContextCompressor(client)
@@ -779,6 +781,7 @@ class AgentLoop:
         self._total_tokens = 0
         self._abort_controller = AbortController()
         self._file_read_state = FileReadState()
+        self._tool_history.clear()
         self._memory.clear_session()
         # 重置鲁棒性组件
         self._task_state = TaskState()
@@ -854,6 +857,11 @@ class AgentLoop:
     def memory(self) -> MemoryManager:
         """获取记忆管理器"""
         return self._memory
+
+    @property
+    def tool_history(self) -> list[dict[str, Any]]:
+        """获取工具执行历史（只读）"""
+        return self._tool_history.copy()
 
     @property
     def task_state(self) -> TaskState:
@@ -1059,6 +1067,18 @@ class AgentLoop:
                         tags=["repeat", tool_call.name],
                         source="repeat_detector",
                     )
+                # 记录到工具历史（标记为被拦截）
+                file_path = tool_call.arguments.get("file_path") or tool_call.arguments.get("path", "")
+                self._tool_history.append({
+                    "turn": self._turn_count,
+                    "tool_name": tool_call.name,
+                    "arguments": tool_call.arguments,
+                    "is_error": True,
+                    "duration_ms": 0,
+                    "file_path": file_path,
+                    "resolved_path": "",
+                    "blocked_by_repeat_detector": True,
+                })
                 continue
 
             # 检查路径逃逸（仅文件相关工具）
@@ -1101,6 +1121,25 @@ class AgentLoop:
             # 记忆写入钩子
             if self._config.memory_enabled:
                 self._record_memory_side_effects(tool_call, result, context)
+
+            # 记录工具执行历史
+            file_path = tool_call.arguments.get("file_path") or tool_call.arguments.get("path", "")
+            resolved_path = ""
+            if tool_call.name in ("read", "write", "edit") and file_path:
+                import os
+                resolved_path = file_path
+                if not os.path.isabs(resolved_path):
+                    resolved_path = os.path.join(context.cwd, resolved_path)
+                resolved_path = os.path.abspath(resolved_path)
+            self._tool_history.append({
+                "turn": self._turn_count,
+                "tool_name": tool_call.name,
+                "arguments": tool_call.arguments,
+                "is_error": result.is_error,
+                "duration_ms": duration_ms,
+                "file_path": file_path,
+                "resolved_path": resolved_path,
+            })
 
             self._tool_call_count += 1
             self._task_state.increment_tool_steps()
