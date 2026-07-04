@@ -68,8 +68,8 @@ class TestMemoryTasks:
     """测试任务数据集"""
 
     def test_has_tasks(self) -> None:
-        """至少有 6 个任务"""
-        assert len(MEMORY_TASKS) >= 6
+        """至少有 14 个任务"""
+        assert len(MEMORY_TASKS) >= 14
 
     def test_all_have_target_files(self) -> None:
         """所有任务都有 target_files"""
@@ -82,10 +82,14 @@ class TestMemoryTasks:
             assert task.verifier in ("contains_text", "file_changed", "multi_file_changed")
 
     def test_history_tasks_have_setup_turns(self) -> None:
-        """history_reference 任务必须有 setup_turns"""
+        """需要 setup_turns 的任务类别必须有 setup_turns"""
+        categories_needing_setup = {
+            "history_reference", "cross_round_recall", "cross_file_dep",
+            "multi_round_edit", "noise",
+        }
         for task in MEMORY_TASKS:
-            if task.category == "history_reference":
-                assert task.setup_turns, f"{task.task_id} is history_reference but has no setup_turns"
+            if task.category in categories_needing_setup:
+                assert task.setup_turns, f"{task.task_id} is {task.category} but has no setup_turns"
 
     def test_fact_tasks_no_setup_turns(self) -> None:
         """fact_lookup 任务不应有 setup_turns"""
@@ -98,6 +102,21 @@ class TestMemoryTasks:
         for task in MEMORY_TASKS:
             if task.verifier == "contains_text":
                 assert task.expected_substrings, f"{task.task_id} uses contains_text but has no expected_substrings"
+
+    def test_new_categories_exist(self) -> None:
+        """新类别都有对应任务"""
+        categories = {t.category for t in MEMORY_TASKS}
+        assert "cross_round_recall" in categories
+        assert "cross_file_dep" in categories
+        assert "multi_round_edit" in categories
+        assert "noise" in categories
+
+    def test_cross_round_recall_eligible_for_memory_hit(self) -> None:
+        """cross_round_recall 任务应有 setup_turns + target_files，可算 memory_hit"""
+        for task in MEMORY_TASKS:
+            if task.category == "cross_round_recall":
+                assert task.setup_turns, f"{task.task_id} needs setup_turns"
+                assert task.target_files, f"{task.task_id} needs target_files"
 
 
 # ============================================================

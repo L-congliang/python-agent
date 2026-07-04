@@ -187,6 +187,135 @@ MEMORY_TASKS = [
         verifier="file_changed",
         expected_substrings=["max_items"],
     ),
+
+    # --- cross_round_recall: 跨轮事实回忆 ---
+    # 设计意图：setup_turns 读文件拿到关键事实，主阶段只提问。
+    # memory_on 应从记忆中回答，不 reread；memory_off 需要再 read 一次。
+    MemoryTask(
+        task_id="recall_api_key",
+        category="cross_round_recall",
+        prompt="What is the exact API_KEY value in api_config.py? "
+               "Answer with just the key string, nothing else.",
+        setup_turns=[
+            "Read api_config.py and list all configuration values.",
+        ],
+        fixture_dir=".",
+        target_files=["api_config.py"],
+        verifier="contains_text",
+        expected_substrings=["sk-prod-abc123xyz789"],
+    ),
+    MemoryTask(
+        task_id="recall_rate_limit",
+        category="cross_round_recall",
+        prompt="What is the RATE_LIMIT value in api_config.py? Answer with just the number.",
+        setup_turns=[
+            "Read api_config.py and summarize the configuration.",
+        ],
+        fixture_dir=".",
+        target_files=["api_config.py"],
+        verifier="contains_text",
+        expected_substrings=["100"],
+    ),
+
+    # --- cross_file_dep: 跨文件依赖修改 ---
+    # 设计意图：setup 读了 A 和 B，主任务只改 A，但正确修改依赖 B 的信息。
+    # memory_on 记住了 B 的内容，无需 reread；memory_off 可能需要再读 B。
+    MemoryTask(
+        task_id="dep_use_api_key",
+        category="cross_file_dep",
+        prompt="Read config2.py to get the API_KEY value, then update api2.py so that "
+               "DEFAULT_HEADERS uses the API_KEY directly as a string literal instead of "
+               "importing it. Write the actual key value into the file.",
+        setup_turns=[
+            "Read config2.py and api2.py. Tell me what API_KEY is and how it's used.",
+        ],
+        fixture_dir=".",
+        target_files=["api2.py", "config2.py"],
+        verifier="file_changed",
+        expected_substrings=["sk-internal-KEY-9999"],
+    ),
+    MemoryTask(
+        task_id="dep_update_header",
+        category="cross_file_dep",
+        prompt="Update api2.py: add a new function check_auth() that returns True if "
+               "DEFAULT_HEADERS contains the correct API_KEY from config2.py. "
+               "You already know the key from our earlier conversation.",
+        setup_turns=[
+            "Read config2.py and api2.py together. What's the API_KEY and how is DEFAULT_HEADERS built?",
+        ],
+        fixture_dir=".",
+        target_files=["api2.py"],
+        verifier="file_changed",
+        expected_substrings=["check_auth"],
+    ),
+
+    # --- multi_round_edit: 多轮连续改动 ---
+    # 设计意图：多步修改同一组文件，前一步的结果是后一步的前提。
+    # memory_on 记住前面的改动，不需要回头确认；memory_off 容易重复读已改文件。
+    MemoryTask(
+        task_id="multi_add_timeout",
+        category="multi_round_edit",
+        prompt="Do these 3 edits in order:\n"
+               "1. In service.py, add a TIMEOUT constant = 30 at the top, and add a "
+               "'timeout' parameter (default TIMEOUT) to process_request.\n"
+               "2. In client.py, update send_request to pass a timeout keyword argument.\n"
+               "3. In client.py, add a new function send_with_retry that calls send_request "
+               "up to 3 times if it returns an error.",
+        setup_turns=[
+            "Read service.py and client.py. Describe the current function signatures.",
+        ],
+        fixture_dir=".",
+        target_files=["service.py", "client.py"],
+        verifier="multi_file_changed",
+        expected_substrings=["send_with_retry"],
+    ),
+    MemoryTask(
+        task_id="multi_add_validation",
+        category="multi_round_edit",
+        prompt="Do these 3 edits:\n"
+               "1. In service.py, change validate_input to also check that 'data' has "
+               "a 'name' key (return False if missing).\n"
+               "2. In client.py, update batch_send to skip items where validate_input "
+               "returns False (don't add them to results).\n"
+               "3. In client.py, add a function validate_batch(items) that returns the "
+               "count of valid items.",
+        setup_turns=[
+            "Read service.py and client.py. How does validate_input work? How does batch_send use it?",
+        ],
+        fixture_dir=".",
+        target_files=["service.py", "client.py"],
+        verifier="multi_file_changed",
+        expected_substrings=["validate_batch"],
+    ),
+
+    # --- noise: 噪声干扰与错误纠偏 ---
+    # 设计意图：setup 注入相似但无关的信息，主任务要求引用正确对象。
+    # memory_irrelevant 应更容易被噪声误导，出现额外工具调用或回答错误。
+    MemoryTask(
+        task_id="noise_db_config",
+        category="noise",
+        prompt="What is the DB_PASSWORD value in database.py? "
+               "Answer with just the password string.",
+        setup_turns=[
+            "Read cache.py and tell me all the cache configuration values.",
+        ],
+        fixture_dir=".",
+        target_files=["database.py"],
+        verifier="contains_text",
+        expected_substrings=["db-secret-pass-12345"],
+    ),
+    MemoryTask(
+        task_id="noise_cache_port",
+        category="noise",
+        prompt="What is the CACHE_PORT value in cache.py? Answer with just the number.",
+        setup_turns=[
+            "Read database.py and tell me all the database configuration values.",
+        ],
+        fixture_dir=".",
+        target_files=["cache.py"],
+        verifier="contains_text",
+        expected_substrings=["6379"],
+    ),
 ]
 
 
@@ -454,7 +583,7 @@ class MemoryExperiment:
 
             # 配置间延迟
             if i < len(self._configs) - 1 and self._use_real_model:
-                time.sleep(5)
+                time.sleep(15)
 
         return results
 
@@ -491,7 +620,7 @@ class MemoryExperiment:
 
             # 任务间延迟，避免 429
             if i < len(tasks) - 1 and self._use_real_model:
-                time.sleep(3)
+                time.sleep(8)
 
         duration = time.time() - start_time
         n = len(tasks) if tasks else 1
