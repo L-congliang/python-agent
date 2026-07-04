@@ -30,7 +30,14 @@
 
 ## 实验结果
 
-### V1 基线（2026-07-04，ContextManager 接入后）
+### V1 修复后（2026-07-04，ContextManager 接入 + 去重 + 路径归一化）
+
+| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration |
+|------|-------------|----------------|-----------------|----------------|--------------|
+| memory_on | **100%** | 1 | 40% (10 eligible) | 2.3 | 14.8s |
+| memory_off | 100% | 0 | 60% (10 eligible) | 2.1 | 12.0s |
+
+### V1 退化版（2026-07-04，ContextManager 接入但有 bug）
 
 | 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration |
 |------|-------------|----------------|-----------------|----------------|--------------|
@@ -45,18 +52,17 @@
 | memory_off | 86% | 1 | 50% (10 eligible) | 2.2 | 14.4s |
 | memory_irrelevant | 93% | 2 | 60% (10 eligible) | 2.3 | 14.3s |
 
-## V1 退化分析
+## V1 修复记录
 
-**退化任务：**
-- `fact_manager_methods`: ❌ (was ✅), 0 tool_calls, 4.3s — 模型从记忆"猜"答案，猜错
-- `history_loop_config`: ❌ (was ✅), 0 tool_calls, 2.7s — 同上
+**问题 1：history + current_request 重复注入。** format_history(self._messages) 包含了最后一条 user 消息，随后又单独提取 current_request，导致当前请求在 prompt 中出现两次，浪费 token 并增加截断概率。修复：history 排除最后一条 user 消息。
 
-**退化原因假设：**
-1. ContextManager 预算裁剪压缩了 tools section，模型对可用工具理解变弱
-2. 分层记忆注入改变了 prompt 结构，模型行为受影响
-3. history formatter 摘要化丢失了关键上下文
+**问题 2：file_summaries 的 recent_files 优先规则失效。** touch_file() 存相对路径，update_file_summary() 存绝对路径，导致 path in recent 永远匹配不上。修复：select_relevant_file_summaries() 做 basename + normpath 双重匹配。
 
-**修复方向：**
-- 检查 ContextMetadata 中各 section 的 rendered_tokens 和 was_truncated
-- 调整 budget 分配或 memory 组装策略
-- 确保 tools section 不被过度压缩
+**问题 3（未修）：budget 裁剪顺序。** tools(2000) 在 memory(1600) 之前被裁。本次实验 metadata 显示零截断，暂不需要调。
+
+## 结论
+
+- V1 改造方向正确，修复后 memory_on 回到 100%
+- ContextManager 零截断（所有 section 都在预算内）
+- history 去重和路径归一化是关键修复
+- 下一步：跑三轮稳定实验，确认结果可复现

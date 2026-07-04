@@ -994,17 +994,20 @@ class AgentLoop:
             max_tokens = memory_budget.max_tokens if memory_budget else 1600
             memory = self._memory.assemble_layered(query, max_tokens=max_tokens)
 
-        # 5. 历史（结构化摘要）
-        history = format_history(self._messages)
-
-        # 6. 当前请求（最近一条 user 消息）
+        # 5. 当前请求（最近一条 user 消息）
         current_request = ""
-        for msg in reversed(self._messages):
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
+        last_user_idx = -1
+        for i in range(len(self._messages) - 1, -1, -1):
+            if self._messages[i].get("role") == "user":
+                content = self._messages[i].get("content", "")
                 if isinstance(content, str):
                     current_request = content
+                last_user_idx = i
                 break
+
+        # 6. 历史（结构化摘要，排除最后一条 user 消息避免重复注入）
+        history_messages = self._messages[:last_user_idx] if last_user_idx > 0 else []
+        history = format_history(history_messages)
 
         # 7. ContextManager 组装
         prompt, metadata = self._context_manager.build_prompt(

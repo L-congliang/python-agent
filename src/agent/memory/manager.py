@@ -222,6 +222,9 @@ class MemoryManager:
         规则：recent_files 优先、路径名与 query 关键词重叠、最近访问优先。
         只返回 fresh 的 summaries。
 
+        路径归一化：recent_files 用 display_path（相对路径），file_summaries 用 abs_path。
+        比较时用 basename 和 normpath 双重匹配。
+
         Args:
             query: 查询文本
             top_k: 返回数量
@@ -229,7 +232,16 @@ class MemoryManager:
         Returns:
             [{"path": str, "content": str}, ...]
         """
-        recent = set(self._working.get_recent_files())
+        import os
+
+        recent_raw = self._working.get_recent_files()
+        # 构建 recent 的归一化集合：原始路径 + basename + normpath
+        recent_normalized: set[str] = set()
+        for r in recent_raw:
+            recent_normalized.add(r)
+            recent_normalized.add(os.path.basename(r))
+            recent_normalized.add(os.path.normpath(r))
+
         query_words = set(query.lower().split())
         results = []
 
@@ -237,8 +249,12 @@ class MemoryManager:
             if not self._files.is_fresh(path):
                 continue
             score = 0.0
-            # 规则1: recent_files 优先
-            if path in recent:
+            # 规则1: recent_files 优先（归一化匹配）
+            path_basename = os.path.basename(path)
+            path_norm = os.path.normpath(path)
+            if (path in recent_normalized
+                    or path_basename in recent_normalized
+                    or path_norm in recent_normalized):
                 score += 2.0
             # 规则2: 路径名与 query 关键词重叠
             path_words = set(path.lower().replace("/", " ").replace(".", " ").split())

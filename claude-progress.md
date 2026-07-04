@@ -26,11 +26,19 @@
 - `fact_manager_methods`: 模型从记忆猜答案，猜错（0 tool_calls）
 - `history_loop_config`: 同上
 
-### 待修复
+### 修复（2 个 bug）
 
-- 检查 ContextMetadata 中各 section 的 token 分配
-- 确保 tools section 不被过度压缩
-- 可能需要调整 budget 分配
+1. **history + current_request 重复注入** — format_history 包含最后一条 user 消息，又单独提取 current_request，导致重复。修复：history 排除最后一条 user 消息。
+2. **file_summaries recent_files 优先规则失效** — touch_file() 存相对路径，update_file_summary() 存绝对路径，path in recent 永远匹配不上。修复：basename + normpath 双重匹配。
+
+### 修复后实验结果
+
+| 指标 | 修复后 memory_on | V0 基线 |
+|------|----------------|---------|
+| correct_rate | **100%** ✅ | 100% |
+| repeated_reads | 1 | 1 |
+
+ContextMetadata 显示零截断，所有 section 都在预算内。
 
 ---
 

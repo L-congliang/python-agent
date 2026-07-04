@@ -747,6 +747,20 @@ class MemoryExperiment:
             )
             correct = _verify_task_result(task, result_text, workspace_root)
 
+            # 记录 ContextMetadata 用于诊断
+            if loop._last_context_metadata:
+                meta = loop._last_context_metadata
+                logger.info(
+                    "  [%s] tokens: total_raw=%d, total_rendered=%d, truncated=%s",
+                    task.task_id, meta.total_raw_tokens,
+                    meta.total_rendered_tokens, meta.was_truncated,
+                )
+                for name, sec in meta.sections.items():
+                    logger.info(
+                        "    %s: raw=%d, rendered=%d, truncated=%s",
+                        name, sec.raw_tokens, sec.rendered_tokens, sec.was_truncated,
+                    )
+
         except Exception as e:
             logger.error("Task %s failed: %s", task.task_id, e)
             correct = False
