@@ -1,5 +1,41 @@
 # 进度日志
 
+## Session 25 — 2026-07-04 Memory V1 — ContextManager 接入运行时
+
+**功能**: P2 记忆系统 — ContextManager 接入 + 分层注入 + History Formatter
+**状态**: ⚠️ 已完成但有退化（correct_rate 100%→86%，待修复）
+
+### 做了什么
+
+1. **U1: SystemPromptBuilder.build_prefix()** — 静态前缀提取，只返回 identity + behavior + tool_guide
+2. **U2: History Formatter** — 新建 `src/agent/context/history_formatter.py`，messages 转结构化摘要
+3. **U3: MemoryManager 分层组装** — `assemble_layered()` + `select_relevant_file_summaries()` + Renderer 分层方法
+4. **U4: Wire ContextManager** — `_build_system_prompt()` 改为通过 ContextManager.build_prompt() 组装
+5. **U5: 记忆实验验证** — 跑真实模型实验
+
+### 实验结果
+
+| 指标 | V1 memory_on | V0 基线 memory_on | 变化 |
+|------|-------------|------------------|------|
+| correct_rate | 86% | 100% | **-14%** ❌ |
+| repeated_reads | 0 | 1 | 改善 ✅ |
+| avg_tool_calls | 2.0 | 2.2 | 改善 ✅ |
+
+### 退化任务
+
+- `fact_manager_methods`: 模型从记忆猜答案，猜错（0 tool_calls）
+- `history_loop_config`: 同上
+
+### 待修复
+
+- 检查 ContextMetadata 中各 section 的 token 分配
+- 确保 tools section 不被过度压缩
+- 可能需要调整 budget 分配
+
+---
+
+## Session 24 — 2026-07-04 任务集升级 + 正式对照评测
+
 ## Session 24 — 2026-07-04 任务集升级 + 正式对照评测
 
 **功能**: P2 记忆系统 — 任务集升级（4 类高难度任务）
