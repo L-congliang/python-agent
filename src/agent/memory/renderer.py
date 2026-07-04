@@ -99,6 +99,68 @@ class MemoryRenderer:
 
         return "\n".join(parts)
 
+    def render_task(self) -> str:
+        """渲染 task 部分
+
+        Returns:
+            task 文本，无 task 时返回空字符串
+        """
+        task = self._working.task_summary
+        if not task:
+            return ""
+        return f"task: {task}"
+
+    def render_recent_files(self, max_files: int = 5) -> str:
+        """渲染 recent_files 部分
+
+        Args:
+            max_files: 最大文件数
+
+        Returns:
+            recent_files 文本
+        """
+        recent = self._working.get_recent_files()
+        if not recent:
+            return "recent_files: -"
+        files_str = ", ".join(recent[-max_files:])
+        return f"recent_files: {files_str}"
+
+    def render_file_summaries(self, summaries: list[dict[str, Any]]) -> str:
+        """渲染 file_summaries 部分
+
+        Args:
+            summaries: select_relevant_file_summaries 返回的列表
+
+        Returns:
+            file_summaries 文本
+        """
+        if not summaries:
+            return "file_summaries: -"
+        parts = ["file_summaries:"]
+        for s in summaries:
+            content = s.get("content", "")
+            preview = content[:80] + "..." if len(content) > 80 else content
+            parts.append(f"  - {s['path']}: {preview}")
+        return "\n".join(parts)
+
+    def render_episodic_notes(self, notes: list[dict[str, Any]]) -> str:
+        """渲染 episodic_notes 部分
+
+        Args:
+            notes: search_notes 返回的列表
+
+        Returns:
+            episodic_notes 文本
+        """
+        if not notes:
+            return ""
+        parts = ["episodic_notes:"]
+        for n in notes:
+            tags = ", ".join(n.get("tags", []))
+            tag_str = f" [{tags}]" if tags else ""
+            parts.append(f"  - {n['text']}{tag_str}")
+        return "\n".join(parts)
+
     def render_compact(self) -> str:
         """渲染为更紧凑的格式（用于 token 受限场景）
 

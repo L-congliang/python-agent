@@ -210,6 +210,99 @@ class MemoryManager:
         """获取持久记忆主题"""
         return self._durable.get_all_topics()
 
+    # ========== 分层组装 ==========
+
+    def select_relevant_file_summaries(
+        self,
+        query: str,
+        top_k: int = 3,
+    ) -> list[dict[str, Any]]:
+        """按相关性选择 file summaries
+
+        规则：recent_files 优先、路径名与 query 关键词重叠、最近访问优先。
+        只返回 fresh 的 summaries。
+
+        Args:
+            query: 查询文本
+            top_k: 返回数量
+
+        Returns:
+            [{"path": str, "content": str}, ...]
+        """
+        recent = set(self._working.get_recent_files())
+        query_words = set(query.lower().split())
+        results = []
+
+        for path, summary in self._files.get_all().items():
+            if not self._files.is_fresh(path):
+                continue
+            score = 0.0
+            # 规则1: recent_files 优先
+            if path in recent:
+                score += 2.0
+            # 规则2: 路径名与 query 关键词重叠
+            path_words = set(path.lower().replace("/", " ").replace(".", " ").split())
+            overlap = path_words & query_words
+            if overlap:
+                score += 1.0 * len(overlap)
+            results.append({"path": path, "content": summary.content, "score": score})
+
+        # 按 score 降序排列
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:top_k]
+
+    def assemble_layered(self, query: str, max_tokens: int = 1600) -> str:
+        """分层组装记忆
+
+        顺序：task → recent_files → file_summaries → episodic_notes。
+        超出 max_tokens 时从后往前截断。
+
+        Args:
+            query: 当前查询（用于 search_notes 和 file_summaries 选择）
+            max_tokens: 最大 token 数
+
+        Returns:
+            组装后的记忆字符串
+        """
+        layers: list[str] = []
+
+        # 1. task（总是注入）
+        task_str = self._renderer.render_task()
+        if task_str:
+            layers.append(task_str)
+
+        # 2. recent_files（总是注入）
+        files_str = self._renderer.render_recent_files()
+        layers.append(files_str)
+
+        # 3. file_summaries（按相关性取 top-k）
+        relevant = self.select_relevant_file_summaries(query, top_k=3)
+        if relevant:
+            summaries_str = self._renderer.render_file_summaries(relevant)
+            layers.append(summaries_str)
+
+        # 4. episodic_notes（search_notes 命中后注入）
+        if query:
+            notes = self.search_notes(query, top_k=3)
+            if notes:
+                notes_str = self._renderer.render_episodic_notes(notes)
+                if notes_str:
+                    layers.append(notes_str)
+
+        result = "\n".join(layers)
+
+        # 从后往前截断（先丢 episodic_notes，再丢 file_summaries）
+        estimated_tokens = len(result) // 4
+        if estimated_tokens > max_tokens:
+            target_chars = max_tokens * 4
+            result = result[:target_chars]
+            # 找最后一个换行符，避免截断中间行
+            last_newline = result.rfind("\n")
+            if last_newline > 0:
+                result = result[:last_newline]
+
+        return result
+
     # ========== 渲染 ==========
 
     def render(self) -> str:
