@@ -1,0 +1,6 @@
+{
+  "app_name": "test_app",
+  "version": "1.0.0",
+  "debug": false,
+  "max_items": 100
+}
