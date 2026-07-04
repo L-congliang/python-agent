@@ -564,7 +564,7 @@ class MemoryExperiment:
                 loop.run(setup_prompt)
 
             # 清空 tool_history，确保主阶段统计不被 setup_turns 污染
-            loop._tool_history.clear()
+            loop.clear_tool_history()
 
             # 跑主任务
             result_text = loop.run(task.prompt)

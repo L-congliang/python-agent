@@ -136,6 +136,8 @@ Token 精确计数 + 预算制组装 + 优先级裁剪。
 | MemoryManager | `memory/manager.py` | ✅ |
 | 写路径闭环 | `core/loop.py`（set_task / touch_file / update_file_summary / append_note / save） | ✅ |
 | memory_enabled 开关 | `core/loop.py`（支持 memory_on/off 对照实验） | ✅ |
+| tool_history | `core/loop.py`（结构化工具执行历史，支撑评测统计） | ✅ |
+| 真实评测 | `evaluation/memory_experiment.py`（correct / repeated_reads / memory_hit 真实统计） | ✅ |
 
 ### P3：工具鲁棒性 ✅
 

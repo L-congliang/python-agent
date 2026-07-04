@@ -863,6 +863,10 @@ class AgentLoop:
         """获取工具执行历史（只读）"""
         return self._tool_history.copy()
 
+    def clear_tool_history(self) -> None:
+        """清空工具执行历史（用于实验隔离 setup_turns 和主任务）"""
+        self._tool_history.clear()
+
     @property
     def task_state(self) -> TaskState:
         """获取任务状态"""

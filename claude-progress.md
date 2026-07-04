@@ -1,5 +1,66 @@
 # 进度日志
 
+## Session 22 — 2026-07-04 评测去假（Phase 2）
+
+**功能**: P2 记忆系统 — 评测去假
+**状态**: ✅ 已完成
+
+### 背景
+
+Phase 1 完成了写路径闭环，但 memory_experiment.py 的评测指标全是硬编码占位符。
+Phase 2 目标：把 correct、repeated_reads、memory_hit 改成真实统计，让实验结论能站住。
+
+### 完成的工作
+
+1. ✅ **loop.py 新增 tool_history**
+   - `_tool_history` 结构化记录每次工具执行
+   - `tool_history` property 只读访问
+   - `clear_tool_history()` 公开方法（实验隔离 setup_turns）
+   - 重复调用拦截也进历史（标记 `blocked_by_repeat_detector`）
+
+2. ✅ **memory_experiment.py 重写**
+   - MemoryTask 新增 `setup_turns` / `verifier` / `expected_substrings` / `target_files` / `fixture_dir`
+   - MemoryMetrics 新增 `avg_tool_calls` / `avg_duration` / `eligible_memory_tasks`
+   - `_create_real_agent_loop()` 接受 `memory_enabled` / `workspace_root` / `max_turns`
+   - memory_on/off 用 `LoopConfig.memory_enabled` 真开关
+
+3. ✅ **三个指标从硬编码改为真实统计**
+
+   | 指标 | 前 | 后 |
+   |------|-----|-----|
+   | correct | `True` 硬编码 | `_verify_task_result()`（contains_text / file_changed） |
+   | repeated_reads | `0` 硬编码 | `_count_repeated_reads()` 从 tool_history 统计 |
+   | memory_hits | `1 if get_task()` | `_compute_memory_hit()` 判定是否避免 reread |
+
+4. ✅ **测试任务从 12 个泛化改为 6 个高质量**
+   - 2 个 fact_lookup（repo 真实文件）
+   - 2 个 history_reference（有 setup_turns）
+   - 2 个 edit_dependency（fixture 临时文件）
+
+5. ✅ **新增测试和 fixture**
+   - `tests/test_memory_experiment.py` — 34 个测试
+   - `tests/fixtures/memory_experiment/` — 3 个 fixture 文件
+
+6. ✅ **Bug 修复**
+   - memory_hit 被 setup_turns 污染 → setup_turns 后清空 tool_history
+   - memory_irrelevant 实际关掉了记忆 → `memory_enabled=config.use_memory`
+
+### 指标定义（写死口径）
+
+| 指标 | 定义 |
+|------|------|
+| correct_rate | verifier 判定正确的任务比例 |
+| repeated_reads | 同一文件第 2 次及以后成功 read 的总次数 |
+| memory_hit_rate | 有 setup_turns 的 eligible 任务中，主阶段未 reread 目标文件的比例 |
+| avg_tool_calls | 平均每任务工具调用次数 |
+| avg_duration | 平均每任务耗时 |
+
+### 验证结果
+
+- 全量测试：775 passed, 3 skipped
+
+---
+
 ## Session 21 — 2026-07-04 记忆系统写路径闭环
 
 **功能**: P2 记忆系统 — 写路径闭环（Phase 1）
