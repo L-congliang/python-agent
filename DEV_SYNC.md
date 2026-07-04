@@ -10,8 +10,8 @@
 
 ## 最新状态
 
-- **当前功能**: P5 多 Agent — Bug 修复
-- **最后更新**: 2026-07-02
+- **当前功能**: P2 记忆系统 — 写路径闭环（Phase 1 完成）
+- **最后更新**: 2026-07-04
 - **最后地点**: 家
 - **当前所在地**: 家
 
@@ -27,6 +27,26 @@
 ---
 
 ## 工作日志
+
+### 2026-07-04 Session 21 — P2 记忆系统写路径闭环
+
+**做了什么:**
+- 给记忆系统接通写路径闭环（全部在 loop.py，+186 行）
+- LoopConfig 新增 memory_enabled 开关
+- run()/run_stream() 自动 set_task + try/finally save
+- _execute_tool_calls() 工具执行后自动写入记忆
+- 3 个 Bug 修复（子 Agent 开关继承、路径绝对化、freshness 误判）
+
+**验证结果：**
+- 全量测试：741 passed, 3 skipped
+
+**当前进度:**
+- P0-P6 全部 done
+- 记忆系统写路径闭环已接通（Phase 1）
+- 评测去假（Phase 2）待做
+
+**下次从这里开始:**
+- Phase 2：重写 memory_experiment.py 占位指标（correct、repeated_reads、memory_hits 改成真实统计）
 
 ### 2026-07-02 Session 19 — P5 多 Agent 代码审查 + Bug 修复
 

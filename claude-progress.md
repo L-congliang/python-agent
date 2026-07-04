@@ -1,5 +1,80 @@
 # 进度日志
 
+## Session 21 — 2026-07-04 记忆系统写路径闭环
+
+**功能**: P2 记忆系统 — 写路径闭环（Phase 1）
+**状态**: ✅ 已完成
+
+### 背景
+
+P2 记忆系统原有架构（WorkingMemory、FileSummaries、EpisodicNotes、DurableMemory）已实现，
+但主循环只有"读路径"（memory.render() 注入 prompt），没有"写路径"（主循环不自动调用 set_task、touch_file 等）。
+记忆系统是"空壳"——每轮 prompt 都翻空白笔记本。
+
+### 完成的工作
+
+1. ✅ **LoopConfig 新增 `memory_enabled` 开关**（默认 True）
+   - 用于 Phase 2 的 memory_on vs memory_off 对照实验
+   - 子 Agent 继承父 Agent 的开关值
+
+2. ✅ **run() / run_stream() 接入写路径**
+   - 开头自动 `set_task(user_input)`
+   - 用 try/finally 保证结束时 `save()`
+   - 主体提取到 `_run_inner()` / `_run_stream_inner()`
+
+3. ✅ **_build_system_prompt() 按开关注入记忆**
+   - `memory_enabled=False` 时传 `None` 给 builder，真关闭
+
+4. ✅ **_execute_tool_calls() 记忆写入钩子**
+   - 新增 `_record_memory_side_effects()` 统一入口
+   - 新增 `_resolve_memory_paths()` 路径解析（abspath 保证绝对路径）
+   - 新增 `_memory_after_tool_success()` 成功写入
+   - 新增 `_memory_after_tool_error()` 失败记录
+
+5. ✅ **写入规则**
+
+   | 工具 | 成功时 | 失败时 |
+   |------|--------|--------|
+   | read | touch_file + update_file_summary（用 file_read_state 原始内容） | append_note |
+   | write | touch_file | append_note |
+   | edit | touch_file | append_note |
+   | bash/grep/glob | 不记录 | 不记录 |
+
+6. ✅ **重复调用检测补记 episodic note**
+   - RepeatDetector 命中时自动 append_note
+
+7. ✅ **ToolUseContext 补 cwd 参数**
+   - `cwd=self._config.workspace_root or "."`
+
+### Bug 修复（复查发现）
+
+| Bug | 问题 | 修复 |
+|-----|------|------|
+| 子 Agent 记忆污染 | `sub_config` 没继承 `memory_enabled`，`_build_subagent_prompt` 无条件注入父记忆 | 加开关继承 + 守卫 |
+| FileSummaries freshness 误判 | `display_path` 是相对路径，`is_fresh()` 的 `os.stat()` 按进程 cwd 解析 | `update_file_summary` 改用 abs_path |
+| 伪绝对路径 | `_resolve_memory_paths()` 用 `normpath()` 不保证绝对 | 改为 `abspath()` |
+
+### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| 钩子放在 `_execute_tool_calls()` | run() 和 run_stream() 都调用它，改一处覆盖两个入口 |
+| 只记 read/write/edit 错误 | bash/grep/glob 错误太多，记了全是噪声 |
+| write/edit 不更新摘要 | 工具输出是"写入成功"确认，不是文件内容；摘要在下次 read 时自然更新 |
+| save() 放 finally 不放每轮 | session 级记忆不需每轮落盘，promote_durable 内部已 save |
+| 用 file_read_state 取原始内容 | result.output 是带行号、可能截断的展示文本，不是原始文件 |
+
+### 验证结果
+
+- 全量测试：741 passed, 3 skipped, 1 deselected（预存 CheckpointManager 问题）
+- 所有新方法和配置项导入验证通过
+
+### 改动文件
+
+- `src/agent/core/loop.py` — +186 行（唯一改动文件）
+
+---
+
 ## Session 20 — 2026-07-03 P6 意图识别与 Prompt 工程
 
 **功能**: P6 意图识别与 Prompt 工程

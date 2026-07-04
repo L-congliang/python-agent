@@ -124,7 +124,7 @@ Token 精确计数 + 预算制组装 + 优先级裁剪。
 
 ### P2：分层记忆系统 ✅
 
-工作记忆 → 事件笔记 → 持久记忆，三级记忆协同。
+工作记忆 → 事件笔记 → 持久记忆，三级记忆协同。读路径（注入 prompt）+ 写路径（自动回写）完整闭环。
 
 | 功能 | 模块 | 状态 |
 |------|------|------|
@@ -134,8 +134,8 @@ Token 精确计数 + 预算制组装 + 优先级裁剪。
 | DurableMemory | `memory/durable.py` | ✅ |
 | Retrieval | `memory/retrieval.py` | ✅ |
 | MemoryManager | `memory/manager.py` | ✅ |
-
-**验证结果**：工具调用减少 49%，耗时减少 61%，正确率 100%
+| 写路径闭环 | `core/loop.py`（set_task / touch_file / update_file_summary / append_note / save） | ✅ |
+| memory_enabled 开关 | `core/loop.py`（支持 memory_on/off 对照实验） | ✅ |
 
 ### P3：工具鲁棒性 ✅
 

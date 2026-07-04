@@ -124,7 +124,7 @@
           "name": "AgentLoop 集成记忆系统",
           "file": "core/loop.py, memory/renderer.py",
           "status": "done",
-          "description": "记忆渲染（紧凑格式）+ 接入主循环"
+          "description": "记忆渲染（紧凑格式）+ 读路径注入 prompt + 写路径自动回写（set_task/touch_file/update_file_summary/append_note/save）+ memory_enabled 开关"
         }
       ]
     },
