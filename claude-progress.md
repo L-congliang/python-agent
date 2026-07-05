@@ -1,5 +1,60 @@
 # 进度日志
 
+## Session 26 — 2026-07-04 Memory V2 — 任务升级 + 异常感知实验
+
+**功能**: P2 记忆系统 — V2 任务升级 + 异常感知实验脚本
+**状态**: ⚠️ 实验因 429 限流失败，已记录异常，待重跑
+
+### 做了什么
+
+1. **V2 任务集升级** — 从 14 个任务增加到 18 个，新增 6 个高记忆依赖任务
+2. **新增 4 个 verifier 类型** — exact_match, file_changed_strict, forbidden_reread, file_changed_no_extra_change
+3. **异常感知实验脚本** — 任务结果补 failed_reason/is_abnormal/abnormal_reason，429/网络/服务异常标记为 abnormal
+4. **延迟提升** — 任务间 8s→15s，config 间 15s→45s
+5. **V2 Smoke Test** — memory_on 100% vs memory_off 78%（差距 22pp）
+6. **V2 正式实验** — 因 429 限流，所有轮次被标记为异常
+
+### V2 Smoke Test 结果
+
+| 配置 | correct_rate | 失败任务数 |
+|------|-------------|----------|
+| memory_on | 100% | 0 |
+| memory_off | 78% | 4 |
+| memory_irrelevant | 89% | 2 |
+
+关键发现：新任务成功放大了记忆价值（差距从 1.4pp 扩大到 22pp）
+
+### V2 正式实验结果（异常）
+
+| 配置 | 干净轮次 | 异常轮次 | 异常原因 |
+|------|---------|---------|---------|
+| memory_on | 0 | 5 | 全部 429 |
+| memory_off | 1 | 4 | 429 |
+| memory_irrelevant | 3 | 2 | 429 |
+
+结论：因 API 429 限流，所有轮次被标记为异常，不纳入正式统计。
+
+### 异常感知脚本改造
+
+- 任务结果补 `failed_reason` / `is_abnormal` / `abnormal_reason`
+- 429/网络/服务异常标记为 `abnormal`（不进正式统计）
+- config 级异常判定：有异常任务的 config 不进正式均值
+- 报告增强：异常任务汇总章节
+
+### 下一步
+
+1. **分批跑**：每次只跑 1 个 config，分三批完成（最稳）
+2. **增加延迟**：任务间 30s，config 间 120s
+3. **等限流恢复**：等几个小时后重跑
+
+### 沉淀
+
+- 正式实验报告：`docs/test-reports/P2-memory-experiment-formal.md`
+- 实验 SOP：`docs/memory-experiment-sop.md`
+- V2 实验原始数据：`docs/test-reports/formal-experiment-v2-final-raw.json`
+
+---
+
 ## Session 25 — 2026-07-04 Memory V1 — ContextManager 接入运行时
 
 **功能**: P2 记忆系统 — ContextManager 接入 + 分层注入 + History Formatter
