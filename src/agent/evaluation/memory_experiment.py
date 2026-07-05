@@ -110,11 +110,15 @@ class MemoryAblationResult:
         metrics: 指标
         duration: 耗时
         task_results: 各任务结果
+        is_abnormal: 该 config 是否有异常任务（不进正式统计）
+        abnormal_count: 异常任务数量
     """
     config: MemoryConfig
     metrics: MemoryMetrics
     duration: float = 0.0
     task_results: list[dict[str, Any]] = field(default_factory=list)
+    is_abnormal: bool = False
+    abnormal_count: int = 0
 
 
 # ============================================================
@@ -723,9 +727,9 @@ class MemoryExperiment:
             result = self._run_single_config(config, tasks)
             results.append(result)
 
-            # 配置间延迟
+            # 配置间延迟（从 15s 提升到 45s）
             if i < len(self._configs) - 1 and self._use_real_model:
-                time.sleep(15)
+                time.sleep(45)
 
         return results
 
@@ -743,11 +747,16 @@ class MemoryExperiment:
         total_tool_calls = 0
         total_duration = 0.0
         eligible_memory_tasks = 0
+        abnormal_count = 0
 
         for i, task in enumerate(tasks):
             logger.info("  Running task: %s", task.task_id)
             result = self._run_single_task(config, task)
             task_results.append(result)
+
+            # 统计异常任务
+            if result.get("is_abnormal", False):
+                abnormal_count += 1
 
             total_repeated_reads += result.get("repeated_reads", 0)
             if result.get("correct", False):
@@ -760,9 +769,9 @@ class MemoryExperiment:
                 total_memory_hits += mh
                 eligible_memory_tasks += 1
 
-            # 任务间延迟，避免 429
+            # 任务间延迟，避免 429（从 8s 提升到 15s）
             if i < len(tasks) - 1 and self._use_real_model:
-                time.sleep(8)
+                time.sleep(15)
 
         duration = time.time() - start_time
         n = len(tasks) if tasks else 1
@@ -777,11 +786,16 @@ class MemoryExperiment:
             eligible_memory_tasks=eligible_memory_tasks,
         )
 
+        # config 级异常判定：有异常任务的 config 不进正式统计
+        is_abnormal = abnormal_count > 0
+
         return MemoryAblationResult(
             config=config,
             metrics=metrics,
             duration=duration,
             task_results=task_results,
+            is_abnormal=is_abnormal,
+            abnormal_count=abnormal_count,
         )
 
     def _run_single_task(
@@ -829,7 +843,22 @@ class MemoryExperiment:
                     logger.warning("429 rate limited, retrying in %ds (attempt %d/%d)", wait, attempt + 1, max_retries)
                     time.sleep(wait)
                 else:
-                    logger.error("Task %s failed: %s", task.task_id, e)
+                    # 判断异常类型
+                    error_str = str(e).lower()
+                    if "429" in error_str:
+                        failed_reason = "api_429"
+                        abnormal_reason = "API 429 rate limited"
+                    elif "network" in error_str or "connection" in error_str or "timeout" in error_str:
+                        failed_reason = "network_error"
+                        abnormal_reason = "Network/connection error"
+                    elif "500" in error_str or "502" in error_str or "503" in error_str:
+                        failed_reason = "service_error"
+                        abnormal_reason = "API service error (5xx)"
+                    else:
+                        failed_reason = "model_error"
+                        abnormal_reason = ""
+
+                    logger.error("Task %s failed (%s): %s", task.task_id, failed_reason, e)
                     return {
                         "task_id": task.task_id,
                         "category": task.category,
@@ -839,6 +868,9 @@ class MemoryExperiment:
                         "tool_calls": 0,
                         "duration": time.time() - start_time,
                         "result_preview": "",
+                        "failed_reason": failed_reason,
+                        "is_abnormal": failed_reason != "model_error",
+                        "abnormal_reason": abnormal_reason,
                     }
         # unreachable
         return {}  # type: ignore[return-value]
@@ -904,7 +936,22 @@ class MemoryExperiment:
                     )
 
         except Exception as e:
-            logger.error("Task %s failed: %s", task.task_id, e)
+            # 判断异常类型
+            error_str = str(e).lower()
+            if "429" in error_str:
+                failed_reason = "api_429"
+                abnormal_reason = "API 429 rate limited"
+            elif "network" in error_str or "connection" in error_str or "timeout" in error_str:
+                failed_reason = "network_error"
+                abnormal_reason = "Network/connection error"
+            elif "500" in error_str or "502" in error_str or "503" in error_str:
+                failed_reason = "service_error"
+                abnormal_reason = "API service error (5xx)"
+            else:
+                failed_reason = "model_error"
+                abnormal_reason = ""
+
+            logger.error("Task %s failed (%s): %s", task.task_id, failed_reason, e)
             correct = False
             repeated_reads = 0
             memory_hits = -1
@@ -913,7 +960,8 @@ class MemoryExperiment:
 
         duration = time.time() - start_time
 
-        return {
+        # 构建返回结果，包含异常标记
+        result = {
             "task_id": task.task_id,
             "category": task.category,
             "correct": correct,
@@ -923,6 +971,18 @@ class MemoryExperiment:
             "duration": duration,
             "result_preview": result_text[:200] if result_text else "",
         }
+
+        # 如果是异常任务，添加异常标记
+        if not correct and failed_reason:
+            result["failed_reason"] = failed_reason
+            result["is_abnormal"] = failed_reason != "model_error"
+            result["abnormal_reason"] = abnormal_reason
+        else:
+            result["failed_reason"] = ""
+            result["is_abnormal"] = False
+            result["abnormal_reason"] = ""
+
+        return result
 
     def _prepare_workspace(self, task: MemoryTask) -> str:
         """准备工作区（复制 fixture 文件到临时目录）
@@ -996,31 +1056,53 @@ class MemoryExperiment:
 
         report.append("## 实验结果")
         report.append("")
-        report.append("| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration | 耗时 |")
-        report.append("|------|-------------|----------------|-----------------|---------------|-------------|------|")
+        report.append("| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration | 耗时 | 异常状态 |")
+        report.append("|------|-------------|----------------|-----------------|---------------|-------------|------|----------|")
         for r in results:
             m = r.metrics
+            abnormal_flag = f"⚠️ {r.abnormal_count} 个异常任务" if r.is_abnormal else "✅ 正常"
             report.append(
                 f"| {r.config.name} | {m.correct_rate:.0%} | {m.repeated_reads} | "
                 f"{m.memory_hit_rate:.0%} ({m.eligible_memory_tasks} eligible) | "
-                f"{m.avg_tool_calls:.1f} | {m.avg_duration:.1f}s | {r.duration:.1f}s |"
+                f"{m.avg_tool_calls:.1f} | {m.avg_duration:.1f}s | {r.duration:.1f}s | {abnormal_flag} |"
             )
         report.append("")
+
+        # 异常任务汇总
+        abnormal_configs = [r for r in results if r.is_abnormal]
+        if abnormal_configs:
+            report.append("## ⚠️ 异常任务汇总")
+            report.append("")
+            report.append("以下 config 存在异常任务，不纳入正式统计：")
+            report.append("")
+            for r in abnormal_configs:
+                report.append(f"### {r.config.name}（{r.abnormal_count} 个异常任务）")
+                report.append("")
+                report.append("| task_id | failed_reason | abnormal_reason |")
+                report.append("|---------|---------------|-----------------|")
+                for tr in r.task_results:
+                    if tr.get("is_abnormal", False):
+                        report.append(
+                            f"| {tr['task_id']} | {tr.get('failed_reason', '')} | {tr.get('abnormal_reason', '')} |"
+                        )
+                report.append("")
 
         report.append("## 各任务详情")
         report.append("")
         for r in results:
-            report.append(f"### {r.config.name}")
+            abnormal_mark = " ⚠️" if r.is_abnormal else ""
+            report.append(f"### {r.config.name}{abnormal_mark}")
             report.append("")
-            report.append("| task_id | correct | repeated_reads | memory_hit | tool_calls | duration |")
-            report.append("|---------|---------|----------------|------------|------------|----------|")
+            report.append("| task_id | correct | repeated_reads | memory_hit | tool_calls | duration | failed_reason |")
+            report.append("|---------|---------|----------------|------------|------------|----------|---------------|")
             for tr in r.task_results:
                 mh = tr.get("memory_hits", -1)
                 mh_str = str(mh) if mh >= 0 else "n/a"
+                failed = tr.get("failed_reason", "")
                 report.append(
                     f"| {tr['task_id']} | {'✅' if tr.get('correct') else '❌'} | "
                     f"{tr.get('repeated_reads', 0)} | {mh_str} | "
-                    f"{tr.get('tool_calls', 0)} | {tr.get('duration', 0):.1f}s |"
+                    f"{tr.get('tool_calls', 0)} | {tr.get('duration', 0):.1f}s | {failed} |"
                 )
             report.append("")
 
