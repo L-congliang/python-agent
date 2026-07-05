@@ -40,25 +40,39 @@ class MemoryTask:
     Attributes:
         task_id: 任务 ID
         category: 类别（fact_lookup, edit_dependency, history_reference, etc.）
+        dependency_level: 记忆依赖等级（L1/L2/L3/L4）
+            L1: 不需要记忆也能答对（如 fact_lookup）
+            L2: 记忆有帮助但不是必须（如 history_reference）
+            L3: 记忆显著提升效率（如 cross_round_recall）
+            L4: 没有记忆几乎不可能答对（如 disambiguate, constraint）
         prompt: 主任务提示
         setup_turns: 前置对话（为 history_reference 提供上下文）
         expected_files: 预期访问的文件
         target_files: 用于 repeated_reads / memory_hit 统计的文件
-        verifier: 验证方式（contains_text / exact_match / file_changed /
-                  file_changed_strict / multi_file_changed / forbidden_reread /
-                  file_changed_no_extra_change）
+        verifier: 验证方式（contains_text / exact_match / structured_match /
+                  file_changed / file_changed_strict / multi_file_changed /
+                  forbidden_reread / file_changed_no_extra_change）
         expected_substrings: 正确性验证的期望子串
+        expected_answer: 预期精确答案（用于 exact_match）
+        forbidden_reads: 主任务阶段禁止读取的文件（用于 forbidden_reread）
+        allowed_files: 只允许修改的文件（用于 no_extra_changes）
+        no_extra_changes: 是否检查只改了该改的文件
         fixture_dir: 该任务使用的 fixture 子目录（相对于 tests/fixtures/memory_experiment/）
         allow_reread: 是否允许重复读取
     """
     task_id: str
     category: str
     prompt: str
+    dependency_level: str = "L1"
     setup_turns: list[str] = field(default_factory=list)
     expected_files: list[str] = field(default_factory=list)
     target_files: list[str] = field(default_factory=list)
     verifier: str = "contains_text"
     expected_substrings: list[str] = field(default_factory=list)
+    expected_answer: str = ""
+    forbidden_reads: list[str] = field(default_factory=list)
+    allowed_files: list[str] = field(default_factory=list)
+    no_extra_changes: bool = False
     fixture_dir: str = ""
     allow_reread: bool = False
 
@@ -84,21 +98,31 @@ class MemoryMetrics:
     Attributes:
         repeated_reads: 重复读取次数
         correct_rate: 正确率
-        memory_hit_rate: 记忆命中率（eligible 任务中的命中比例）
+        memory_hit_rate: 记忆命中率（诊断指标，不作为主效果指标）
+        memory_dependent_success_rate: 记忆依赖成功率（L3/L4 任务的正确率）
+        target_reread_rate: 目标文件重读率（主任务阶段重读目标文件的比例）
+        answer_without_reread_rate: 无重读回答率（setup_turns 后不重读就能答对的比例）
         total_tool_calls: 总工具调用次数
         total_tokens: 总 token 数
         avg_tool_calls: 平均工具调用次数
         avg_duration: 平均耗时
         eligible_memory_tasks: 可判定 memory_hit 的任务数
+        l3l4_tasks: L3/L4 任务数量
+        l3l4_correct: L3/L4 任务正确数量
     """
     repeated_reads: int = 0
     correct_rate: float = 0.0
-    memory_hit_rate: float = 0.0
+    memory_hit_rate: float = 0.0  # 诊断指标，不作为主效果指标
+    memory_dependent_success_rate: float = 0.0  # 主效果指标：L3/L4 任务正确率
+    target_reread_rate: float = 0.0  # 目标文件重读率
+    answer_without_reread_rate: float = 0.0  # 无重读回答率
     total_tool_calls: int = 0
     total_tokens: int = 0
     avg_tool_calls: float = 0.0
     avg_duration: float = 0.0
     eligible_memory_tasks: int = 0
+    l3l4_tasks: int = 0
+    l3l4_correct: int = 0
 
 
 @dataclass
@@ -128,10 +152,11 @@ class MemoryAblationResult:
 _FIXTURE_BASE = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "memory_experiment"
 
 MEMORY_TASKS = [
-    # --- history_reference: 有 setup_turns，验证 memory_hit ---
+    # --- L2: history_reference — 记忆有帮助但不是必须 ---
     MemoryTask(
         task_id="history_loop_config",
         category="history_reference",
+        dependency_level="L2",
         prompt="What is the default value of max_turns in LoopConfig? Answer with just the number.",
         setup_turns=[
             "Read the file src/agent/core/loop.py and tell me what LoopConfig's max_turns default is.",
@@ -139,10 +164,12 @@ MEMORY_TASKS = [
         target_files=["src/agent/core/loop.py"],
         verifier="contains_text",
         expected_substrings=["50"],
+        expected_answer="50",
     ),
     MemoryTask(
         task_id="history_manager_class",
         category="history_reference",
+        dependency_level="L2",
         prompt="What methods does MemoryManager have? List them.",
         setup_turns=[
             "Read src/agent/memory/manager.py and describe the MemoryManager class.",
@@ -152,10 +179,11 @@ MEMORY_TASKS = [
         expected_substrings=["set_task"],
     ),
 
-    # --- edit_dependency: fixture 文件，验证 file_changed ---
+    # --- L1: edit_dependency — 不需要记忆也能答对 ---
     MemoryTask(
         task_id="edit_main_function",
         category="edit_dependency",
+        dependency_level="L1",
         prompt="In main.py, change the calculate_sum function to also accept an optional third "
                "parameter 'c' with default 0, and add it to the sum. Then read utils.py to check "
                "if format_output needs any update.",
@@ -167,6 +195,7 @@ MEMORY_TASKS = [
     MemoryTask(
         task_id="edit_config_update",
         category="edit_dependency",
+        dependency_level="L2",
         prompt="Read config.json, then update main.py to use the 'max_items' value from config.json "
                "as the default for a new parameter in calculate_sum.",
         fixture_dir=".",
@@ -175,12 +204,11 @@ MEMORY_TASKS = [
         expected_substrings=["max_items"],
     ),
 
-    # --- cross_round_recall: 跨轮事实回忆 ---
-    # 设计意图：setup_turns 读文件拿到关键事实，主阶段只提问。
-    # memory_on 应从记忆中回答，不 reread；memory_off 需要再 read 一次。
+    # --- L3: cross_round_recall — 记忆显著提升效率 ---
     MemoryTask(
         task_id="recall_api_key",
         category="cross_round_recall",
+        dependency_level="L3",
         prompt="What is the exact API_KEY value in api_config.py? "
                "Answer with just the key string, nothing else.",
         setup_turns=[
@@ -188,28 +216,30 @@ MEMORY_TASKS = [
         ],
         fixture_dir=".",
         target_files=["api_config.py"],
-        verifier="contains_text",
+        verifier="exact_match",
         expected_substrings=["sk-prod-abc123xyz789"],
+        expected_answer="sk-prod-abc123xyz789",
     ),
     MemoryTask(
         task_id="recall_rate_limit",
         category="cross_round_recall",
+        dependency_level="L3",
         prompt="What is the RATE_LIMIT value in api_config.py? Answer with just the number.",
         setup_turns=[
             "Read api_config.py and summarize the configuration.",
         ],
         fixture_dir=".",
         target_files=["api_config.py"],
-        verifier="contains_text",
+        verifier="exact_match",
         expected_substrings=["100"],
+        expected_answer="100",
     ),
 
-    # --- cross_file_dep: 跨文件依赖修改 ---
-    # 设计意图：setup 读了 A 和 B，主任务只改 A，但正确修改依赖 B 的信息。
-    # memory_on 记住了 B 的内容，无需 reread；memory_off 可能需要再读 B。
+    # --- L3: cross_file_dep — 跨文件依赖修改 ---
     MemoryTask(
         task_id="dep_use_api_key",
         category="cross_file_dep",
+        dependency_level="L3",
         prompt="Read config2.py to get the API_KEY value, then update api2.py so that "
                "DEFAULT_HEADERS uses the API_KEY directly as a string literal instead of "
                "importing it. Write the actual key value into the file.",
@@ -218,12 +248,14 @@ MEMORY_TASKS = [
         ],
         fixture_dir=".",
         target_files=["api2.py", "config2.py"],
-        verifier="file_changed",
+        verifier="file_changed_strict",
         expected_substrings=["sk-internal-KEY-9999"],
+        forbidden_reads=["config2.py"],
     ),
     MemoryTask(
         task_id="dep_update_header",
         category="cross_file_dep",
+        dependency_level="L3",
         prompt="Update api2.py: add a new function check_auth() that returns True if "
                "DEFAULT_HEADERS contains the correct API_KEY from config2.py. "
                "You already know the key from our earlier conversation.",
@@ -234,14 +266,14 @@ MEMORY_TASKS = [
         target_files=["api2.py"],
         verifier="file_changed",
         expected_substrings=["check_auth"],
+        forbidden_reads=["config2.py"],
     ),
 
-    # --- multi_round_edit: 多轮连续改动 ---
-    # 设计意图：多步修改同一组文件，前一步的结果是后一步的前提。
-    # memory_on 记住前面的改动，不需要回头确认；memory_off 容易重复读已改文件。
+    # --- L2: multi_round_edit — 多轮连续改动 ---
     MemoryTask(
         task_id="multi_add_timeout",
         category="multi_round_edit",
+        dependency_level="L2",
         prompt="Do these 3 edits in order:\n"
                "1. In service.py, add a TIMEOUT constant = 30 at the top, and add a "
                "'timeout' parameter (default TIMEOUT) to process_request.\n"
@@ -259,6 +291,7 @@ MEMORY_TASKS = [
     MemoryTask(
         task_id="multi_add_validation",
         category="multi_round_edit",
+        dependency_level="L2",
         prompt="Do these 3 edits:\n"
                "1. In service.py, change validate_input to also check that 'data' has "
                "a 'name' key (return False if missing).\n"
@@ -275,12 +308,11 @@ MEMORY_TASKS = [
         expected_substrings=["validate_batch"],
     ),
 
-    # --- noise: 噪声干扰与错误纠偏 ---
-    # 设计意图：setup 注入相似但无关的信息，主任务要求引用正确对象。
-    # memory_irrelevant 应更容易被噪声误导，出现额外工具调用或回答错误。
+    # --- L2: noise — 噪声干扰与错误纠偏 ---
     MemoryTask(
         task_id="noise_db_config",
         category="noise",
+        dependency_level="L2",
         prompt="What is the DB_PASSWORD value in database.py? "
                "Answer with just the password string.",
         setup_turns=[
@@ -288,29 +320,32 @@ MEMORY_TASKS = [
         ],
         fixture_dir=".",
         target_files=["database.py"],
-        verifier="contains_text",
+        verifier="exact_match",
         expected_substrings=["db-secret-pass-12345"],
+        expected_answer="db-secret-pass-12345",
     ),
     MemoryTask(
         task_id="noise_cache_port",
         category="noise",
+        dependency_level="L2",
         prompt="What is the CACHE_PORT value in cache.py? Answer with just the number.",
         setup_turns=[
             "Read database.py and tell me all the database configuration values.",
         ],
         fixture_dir=".",
         target_files=["cache.py"],
-        verifier="contains_text",
+        verifier="exact_match",
         expected_substrings=["6379"],
+        expected_answer="6379",
     ),
 
     # --- V2: 高记忆依赖任务 ---
-    # 设计意图：这些任务必须依赖记忆才能答对，大幅减少"蒙对"的可能。
 
     # L4: 抗混淆任务 — setup 读了两个相似文件，主任务要求只返回其中一个
     MemoryTask(
         task_id="disambiguate_db_vs_cache_secret",
         category="noise",
+        dependency_level="L4",
         prompt="Return only the DB_PASSWORD value, not the cache password.",
         setup_turns=[
             "Read database.py and cache.py, then tell me the DB password and cache password separately.",
@@ -319,12 +354,14 @@ MEMORY_TASKS = [
         target_files=["database.py", "cache.py"],
         verifier="exact_match",
         expected_substrings=["db-secret-pass-12345"],
+        expected_answer="db-secret-pass-12345",
     ),
 
     # L4: 记住约束 — setup 阶段给约束，主任务要求遵守
     MemoryTask(
         task_id="delayed_constraint_single_file_edit",
         category="edit_dependency",
+        dependency_level="L4",
         prompt="Add a new function send_safe(payload) to client.py. It should call "
                "validate_input first and return {'error': 'invalid input'} if validation "
                "fails; otherwise call process_request. Do not modify service.py.",
@@ -336,12 +373,15 @@ MEMORY_TASKS = [
         target_files=["client.py", "service.py"],
         verifier="file_changed_no_extra_change",
         expected_substrings=["send_safe"],
+        allowed_files=["client.py"],
+        no_extra_changes=True,
     ),
 
     # L4: 跨文件精确回忆 + 无 import 编辑
     MemoryTask(
         task_id="cross_file_literal_recall_no_import",
         category="cross_file_dep",
+        dependency_level="L4",
         prompt="Update api2.py so it defines DEFAULT_LIMIT = the exact MAX_ITEMS integer "
                "from config2.py, and add a function build_auth_header() that returns the "
                "exact Bearer token string using the API_KEY value as a literal. Do not "
@@ -353,12 +393,16 @@ MEMORY_TASKS = [
         target_files=["api2.py", "config2.py"],
         verifier="file_changed_strict",
         expected_substrings=["DEFAULT_LIMIT", "200", "build_auth_header", "sk-internal-KEY-9999"],
+        forbidden_reads=["config2.py"],
+        allowed_files=["api2.py"],
+        no_extra_changes=True,
     ),
 
     # L4: 插入噪声后继续前任务
     MemoryTask(
         task_id="multi_round_edit_after_noise",
         category="multi_round_edit",
+        dependency_level="L4",
         prompt="Continue the earlier service/client task: in service.py add TIMEOUT = 30 "
                "and make process_request accept timeout=TIMEOUT; in client.py make "
                "send_request pass timeout, and add send_with_retry(payload, retries=3). "
@@ -377,6 +421,7 @@ MEMORY_TASKS = [
     MemoryTask(
         task_id="forbidden_reread_fact_answer",
         category="cross_round_recall",
+        dependency_level="L3",
         prompt="What is the TIMEOUT value? Answer with just the number.",
         setup_turns=[
             "Read api_config.py and memorize API_KEY, API_URL, and TIMEOUT.",
@@ -385,12 +430,15 @@ MEMORY_TASKS = [
         target_files=["api_config.py"],
         verifier="forbidden_reread",
         expected_substrings=["30"],
+        expected_answer="30",
+        forbidden_reads=["api_config.py"],
     ),
 
     # L4: 用前置事实编辑，不 reread
     MemoryTask(
         task_id="edit_using_previous_fact_only",
         category="edit_dependency",
+        dependency_level="L4",
         prompt="Update main.py by adding DEFAULT_RATE_LIMIT and DEFAULT_RETRY_COUNT "
                "constants at the top using the exact values from earlier context. "
                "Do not read api_config.py again.",
@@ -401,6 +449,9 @@ MEMORY_TASKS = [
         target_files=["main.py", "api_config.py"],
         verifier="file_changed_strict",
         expected_substrings=["100", "3"],
+        forbidden_reads=["api_config.py"],
+        allowed_files=["main.py"],
+        no_extra_changes=True,
     ),
 ]
 
@@ -476,6 +527,7 @@ def _verify_task_result(
     task: MemoryTask,
     result_text: str,
     workspace_root: str,
+    tool_history: list[dict[str, Any]] | None = None,
 ) -> bool:
     """验证任务结果
 
@@ -483,6 +535,7 @@ def _verify_task_result(
         task: 任务定义
         result_text: 模型最终回复
         workspace_root: 工作区根目录
+        tool_history: 工具执行历史（用于 forbidden_reread 检查）
 
     Returns:
         是否正确
@@ -492,9 +545,21 @@ def _verify_task_result(
         return all(sub.lower() in result_lower for sub in task.expected_substrings)
 
     if task.verifier == "exact_match":
-        # 精确匹配：回复中必须包含所有 expected_substrings
+        # 精确匹配：回复中必须包含 expected_answer（如果提供）或所有 expected_substrings
         result_stripped = result_text.strip()
+        if task.expected_answer:
+            # 优先使用 expected_answer 进行精确匹配
+            return task.expected_answer in result_stripped
         return all(sub in result_stripped for sub in task.expected_substrings)
+
+    if task.verifier == "structured_match":
+        # 结构化匹配：回复必须包含所有 expected_substrings，且格式正确
+        result_stripped = result_text.strip()
+        if not all(sub in result_stripped for sub in task.expected_substrings):
+            return False
+        # 检查是否包含预期的结构（如列表、表格等）
+        # 简单检查：回复长度合理，不是空回复
+        return len(result_stripped) > 10
 
     if task.verifier == "file_changed":
         for target in task.target_files:
@@ -535,42 +600,82 @@ def _verify_task_result(
 
     if task.verifier == "forbidden_reread":
         # 禁止 reread：答案正确且主任务阶段未 reread 目标文件
-        # 由外部调用方处理 reread 检查，这里只做 contains_text 验证
+        # 首先检查答案是否正确
         result_lower = result_text.lower()
-        return all(sub.lower() in result_lower for sub in task.expected_substrings)
+        if not all(sub.lower() in result_lower for sub in task.expected_substrings):
+            return False
+        # 然后检查是否 reread 了禁止的文件
+        if tool_history and task.forbidden_reads:
+            for entry in tool_history:
+                if entry.get("tool_name") != "read":
+                    continue
+                if entry.get("is_error"):
+                    continue
+                resolved = entry.get("resolved_path", "")
+                if not resolved:
+                    continue
+                # 检查是否读取了禁止的文件
+                for forbidden in task.forbidden_reads:
+                    forbidden_abs = os.path.normpath(os.path.join(workspace_root, forbidden))
+                    if os.path.normpath(resolved) == forbidden_abs:
+                        return False
+        return True
 
     if task.verifier == "file_changed_no_extra_change":
         # 新文件变更 + 原文件未改动
         # expected_substrings 必须在新文件中出现
-        # 第一个 target_file 是新文件（应变更），第二个是原文件（不应变更）
-        if len(task.target_files) < 2:
-            return False
-        new_file = task.target_files[0]
-        old_file = task.target_files[1]
-        new_path = os.path.join(workspace_root, new_file)
-        old_path = os.path.join(workspace_root, old_file)
-        # 检查新文件存在且包含 expected_substrings
-        if not os.path.exists(new_path):
-            return False
-        try:
-            new_content = Path(new_path).read_text(encoding="utf-8")
-            if not all(sub in new_content for sub in task.expected_substrings):
+        # 检查 allowed_files 中的文件被修改，其他文件未被修改
+        if not task.allowed_files:
+            # 如果没有指定 allowed_files，使用传统逻辑
+            if len(task.target_files) < 2:
                 return False
-        except OSError:
-            return False
-        # 检查原文件未被修改（如果存在）
-        if os.path.exists(old_path):
-            # 原文件存在，检查是否被修改
-            # 这里用简单方法：检查原文件是否仍然包含原始结构
+            new_file = task.target_files[0]
+            old_file = task.target_files[1]
+            new_path = os.path.join(workspace_root, new_file)
+            old_path = os.path.join(workspace_root, old_file)
+            if not os.path.exists(new_path):
+                return False
             try:
-                old_content = Path(old_path).read_text(encoding="utf-8")
-                # 如果原文件被修改，通常会有新增内容
-                # 简单检查：如果原文件包含 expected_substrings，说明被错误修改了
-                if any(sub in old_content for sub in task.expected_substrings):
+                new_content = Path(new_path).read_text(encoding="utf-8")
+                if not all(sub in new_content for sub in task.expected_substrings):
                     return False
             except OSError:
-                pass
-        return True
+                return False
+            if os.path.exists(old_path):
+                try:
+                    old_content = Path(old_path).read_text(encoding="utf-8")
+                    if any(sub in old_content for sub in task.expected_substrings):
+                        return False
+                except OSError:
+                    pass
+            return True
+        else:
+            # 使用 allowed_files 检查
+            # 1. 检查 allowed_files 中的文件包含 expected_substrings
+            for allowed in task.allowed_files:
+                allowed_path = os.path.join(workspace_root, allowed)
+                if not os.path.exists(allowed_path):
+                    return False
+                try:
+                    content = Path(allowed_path).read_text(encoding="utf-8")
+                    if not all(sub in content for sub in task.expected_substrings):
+                        return False
+                except OSError:
+                    return False
+            # 2. 检查 target_files 中不在 allowed_files 的文件未被修改
+            # 这里用简单方法：检查这些文件是否仍然存在且不包含 expected_substrings
+            for target in task.target_files:
+                if target in task.allowed_files:
+                    continue
+                target_path = os.path.join(workspace_root, target)
+                if os.path.exists(target_path):
+                    try:
+                        content = Path(target_path).read_text(encoding="utf-8")
+                        if any(sub in content for sub in task.expected_substrings):
+                            return False
+                    except OSError:
+                        pass
+            return True
 
     # 未知 verifier，默认通过
     return True
@@ -748,6 +853,11 @@ class MemoryExperiment:
         total_duration = 0.0
         eligible_memory_tasks = 0
         abnormal_count = 0
+        # 新增指标统计
+        l3l4_tasks = 0
+        l3l4_correct = 0
+        target_reread_count = 0
+        answer_without_reread_count = 0
 
         for i, task in enumerate(tasks):
             logger.info("  Running task: %s", task.task_id)
@@ -769,6 +879,20 @@ class MemoryExperiment:
                 total_memory_hits += mh
                 eligible_memory_tasks += 1
 
+            # 统计 L3/L4 任务
+            if task.dependency_level in ("L3", "L4"):
+                l3l4_tasks += 1
+                if result.get("correct", False):
+                    l3l4_correct += 1
+
+            # 统计目标文件重读率
+            if result.get("repeated_reads", 0) > 0:
+                target_reread_count += 1
+
+            # 统计无重读回答率（setup_turns 后不重读就能答对）
+            if task.setup_turns and result.get("correct", False) and result.get("repeated_reads", 0) == 0:
+                answer_without_reread_count += 1
+
             # 任务间延迟，避免 429（从 8s 提升到 15s）
             if i < len(tasks) - 1 and self._use_real_model:
                 time.sleep(15)
@@ -776,14 +900,24 @@ class MemoryExperiment:
         duration = time.time() - start_time
         n = len(tasks) if tasks else 1
 
+        # 计算新指标
+        memory_dependent_success_rate = l3l4_correct / l3l4_tasks if l3l4_tasks > 0 else 0.0
+        target_reread_rate = target_reread_count / n
+        answer_without_reread_rate = answer_without_reread_count / eligible_memory_tasks if eligible_memory_tasks > 0 else 0.0
+
         metrics = MemoryMetrics(
             repeated_reads=total_repeated_reads,
             correct_rate=total_correct / n,
             memory_hit_rate=total_memory_hits / eligible_memory_tasks if eligible_memory_tasks > 0 else 0.0,
+            memory_dependent_success_rate=memory_dependent_success_rate,
+            target_reread_rate=target_reread_rate,
+            answer_without_reread_rate=answer_without_reread_rate,
             total_tool_calls=total_tool_calls,
             avg_tool_calls=total_tool_calls / n,
             avg_duration=total_duration / n,
             eligible_memory_tasks=eligible_memory_tasks,
+            l3l4_tasks=l3l4_tasks,
+            l3l4_correct=l3l4_correct,
         )
 
         # config 级异常判定：有异常任务的 config 不进正式统计
@@ -919,7 +1053,7 @@ class MemoryExperiment:
             memory_hits = _compute_memory_hit(
                 task, loop.tool_history, workspace_root,
             )
-            correct = _verify_task_result(task, result_text, workspace_root)
+            correct = _verify_task_result(task, result_text, workspace_root, loop.tool_history)
 
             # 记录 ContextMetadata 用于诊断
             if loop._last_context_metadata:
@@ -1023,6 +1157,25 @@ class MemoryExperiment:
         report.append("- memory_irrelevant: memory_enabled=True + 注入噪声记忆")
         report.append("")
 
+        # 任务分级统计
+        report.append("## 任务分级统计")
+        report.append("")
+        report.append("| 等级 | 数量 | 说明 |")
+        report.append("|------|------|------|")
+        level_counts: dict[str, int] = {}
+        for task in MEMORY_TASKS:
+            level_counts[task.dependency_level] = level_counts.get(task.dependency_level, 0) + 1
+        level_desc = {
+            "L1": "不需要记忆也能答对",
+            "L2": "记忆有帮助但不是必须",
+            "L3": "记忆显著提升效率",
+            "L4": "没有记忆几乎不可能答对",
+        }
+        for level in ["L1", "L2", "L3", "L4"]:
+            if level in level_counts:
+                report.append(f"| {level} | {level_counts[level]} | {level_desc.get(level, '')} |")
+        report.append("")
+
         report.append("## 测试场景")
         report.append("")
         report.append("| 类别 | 数量 | 说明 |")
@@ -1045,28 +1198,52 @@ class MemoryExperiment:
 
         report.append("## 指标定义")
         report.append("")
-        report.append("| 指标 | 定义 |")
-        report.append("|------|------|")
-        report.append("| correct_rate | verifier 判定正确的任务比例 |")
-        report.append("| repeated_reads | 同一文件第 2 次及以后成功读取的总次数 |")
-        report.append("| memory_hit_rate | 有 setup_turns 的任务中，主阶段未 reread 目标文件的比例 |")
-        report.append("| avg_tool_calls | 平均每任务工具调用次数 |")
-        report.append("| avg_duration | 平均每任务耗时（秒） |")
+        report.append("| 指标 | 定义 | 用途 |")
+        report.append("|------|------|------|")
+        report.append("| correct_rate | verifier 判定正确的任务比例 | 整体指标 |")
+        report.append("| memory_dependent_success_rate | L3/L4 任务的正确率 | **主效果指标** |")
+        report.append("| target_reread_rate | 主任务阶段重读目标文件的比例 | 效率指标 |")
+        report.append("| answer_without_reread_rate | setup_turns 后不重读就能答对的比例 | 效率指标 |")
+        report.append("| repeated_reads | 同一文件第 2 次及以后成功读取的总次数 | 诊断指标 |")
+        report.append("| memory_hit_rate | 有 setup_turns 的任务中，主阶段未 reread 目标文件的比例 | 诊断指标（不作为主效果） |")
+        report.append("| avg_tool_calls | 平均每任务工具调用次数 | 效率指标 |")
+        report.append("| avg_duration | 平均每任务耗时（秒） | 效率指标 |")
         report.append("")
 
         report.append("## 实验结果")
         report.append("")
-        report.append("| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration | 耗时 | 异常状态 |")
-        report.append("|------|-------------|----------------|-----------------|---------------|-------------|------|----------|")
+        report.append("| 配置 | correct_rate | memory_dependent_success_rate | target_reread_rate | answer_without_reread_rate | avg_tool_calls | avg_duration | 异常状态 |")
+        report.append("|------|-------------|------------------------------|-------------------|---------------------------|---------------|-------------|----------|")
         for r in results:
             m = r.metrics
             abnormal_flag = f"⚠️ {r.abnormal_count} 个异常任务" if r.is_abnormal else "✅ 正常"
             report.append(
-                f"| {r.config.name} | {m.correct_rate:.0%} | {m.repeated_reads} | "
-                f"{m.memory_hit_rate:.0%} ({m.eligible_memory_tasks} eligible) | "
-                f"{m.avg_tool_calls:.1f} | {m.avg_duration:.1f}s | {r.duration:.1f}s | {abnormal_flag} |"
+                f"| {r.config.name} | {m.correct_rate:.0%} | {m.memory_dependent_success_rate:.0%} ({m.l3l4_correct}/{m.l3l4_tasks}) | "
+                f"{m.target_reread_rate:.0%} | {m.answer_without_reread_rate:.0%} | "
+                f"{m.avg_tool_calls:.1f} | {m.avg_duration:.1f}s | {abnormal_flag} |"
             )
         report.append("")
+
+        # 正式结论章节（只看 clean rounds）
+        clean_results = [r for r in results if not r.is_abnormal]
+        if clean_results:
+            report.append("## 正式结论（只看 clean rounds）")
+            report.append("")
+            report.append("**以下结论只基于无异常任务的轮次：**")
+            report.append("")
+            for r in clean_results:
+                m = r.metrics
+                report.append(f"### {r.config.name}")
+                report.append(f"- correct_rate: {m.correct_rate:.0%}")
+                report.append(f"- **memory_dependent_success_rate: {m.memory_dependent_success_rate:.0%}**（L3/L4 任务 {m.l3l4_correct}/{m.l3l4_tasks}）")
+                report.append(f"- target_reread_rate: {m.target_reread_rate:.0%}")
+                report.append(f"- answer_without_reread_rate: {m.answer_without_reread_rate:.0%}")
+                report.append("")
+        else:
+            report.append("## ⚠️ 无 clean rounds")
+            report.append("")
+            report.append("**所有轮次都存在异常任务，无法得出正式结论。**")
+            report.append("")
 
         # 异常任务汇总
         abnormal_configs = [r for r in results if r.is_abnormal]
@@ -1087,24 +1264,35 @@ class MemoryExperiment:
                         )
                 report.append("")
 
-        report.append("## 各任务详情")
+        # 按 L1-L4 分组的任务详情
+        report.append("## 各任务详情（按 L1-L4 分组）")
         report.append("")
-        for r in results:
-            abnormal_mark = " ⚠️" if r.is_abnormal else ""
-            report.append(f"### {r.config.name}{abnormal_mark}")
+        for level in ["L4", "L3", "L2", "L1"]:
+            level_tasks = [t for t in MEMORY_TASKS if t.dependency_level == level]
+            if not level_tasks:
+                continue
+            report.append(f"### {level} 任务（{len(level_tasks)} 个）")
             report.append("")
-            report.append("| task_id | correct | repeated_reads | memory_hit | tool_calls | duration | failed_reason |")
-            report.append("|---------|---------|----------------|------------|------------|----------|---------------|")
-            for tr in r.task_results:
-                mh = tr.get("memory_hits", -1)
-                mh_str = str(mh) if mh >= 0 else "n/a"
-                failed = tr.get("failed_reason", "")
-                report.append(
-                    f"| {tr['task_id']} | {'✅' if tr.get('correct') else '❌'} | "
-                    f"{tr.get('repeated_reads', 0)} | {mh_str} | "
-                    f"{tr.get('tool_calls', 0)} | {tr.get('duration', 0):.1f}s | {failed} |"
-                )
-            report.append("")
+            for r in results:
+                abnormal_mark = " ⚠️" if r.is_abnormal else ""
+                report.append(f"#### {r.config.name}{abnormal_mark}")
+                report.append("")
+                report.append("| task_id | category | correct | repeated_reads | memory_hit | tool_calls | duration | failed_reason |")
+                report.append("|---------|----------|---------|----------------|------------|------------|----------|---------------|")
+                for tr in r.task_results:
+                    # 只显示当前 level 的任务
+                    task_obj = next((t for t in MEMORY_TASKS if t.task_id == tr["task_id"]), None)
+                    if not task_obj or task_obj.dependency_level != level:
+                        continue
+                    mh = tr.get("memory_hits", -1)
+                    mh_str = str(mh) if mh >= 0 else "n/a"
+                    failed = tr.get("failed_reason", "")
+                    report.append(
+                        f"| {tr['task_id']} | {tr.get('category', '')} | {'✅' if tr.get('correct') else '❌'} | "
+                        f"{tr.get('repeated_reads', 0)} | {mh_str} | "
+                        f"{tr.get('tool_calls', 0)} | {tr.get('duration', 0):.1f}s | {failed} |"
+                    )
+                report.append("")
 
         return "\n".join(report)
 
