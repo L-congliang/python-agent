@@ -1,5 +1,56 @@
 # 进度日志
 
+## Session 28 — 2026-07-04 Memory V2 — 结构化摘要 + 检索强化 + 注入策略显式化
+
+**功能**: 记忆系统 V2 升级
+**状态**: ✅ 完成
+
+### 做了什么
+
+1. **File Summary 升级** — 从截断 180 字符升级为结构化轻摘要
+2. **Episodic Notes 检索升级** — 结构标签 + 分层匹配
+3. **注入策略显式化** — 固化每层注入数量 + 记录注入统计
+4. **Freshness / Invalidation 补强** — 写后主动 mark_pending_refresh
+
+### File Summary 结构化
+
+| 字段 | 说明 |
+|------|------|
+| responsibility | 文件职责（一行描述） |
+| key_entities | 关键类/函数/常量列表 |
+| recent_focus | 最近一次读到的重点 |
+| is_pending_refresh | 是否待刷新（文件被修改后标记） |
+
+### Episodic Notes 结构标签
+
+| 字段 | 说明 |
+|------|------|
+| kind | 笔记类型（fact/constraint/conflict/observation/decision） |
+| entity | 相关实体（类名、函数名、变量名等） |
+| file_path | 相关文件路径 |
+| importance | 重要性（high/medium/low） |
+
+### 注入策略
+
+| 层级 | 策略 |
+|------|------|
+| task | always（总是注入） |
+| recent_files | top 3-5（总是注入） |
+| file_summaries | relevant top-3（按相关性取） |
+| episodic_notes | hit top 1-3（search_notes 命中后注入） |
+
+### 下一步
+
+1. **重开正式实验** — 使用 V3 评测体系 + V2 记忆系统重跑
+2. **验证效果** — 确认 L3/L4 任务的 memory_dependent_success_rate 提升
+
+### 沉淀
+
+- 代码：`src/agent/memory/file_summaries.py`, `episodic.py`, `retrieval.py`, `manager.py`, `renderer.py`, `loop.py`
+- 提交：c7e27d1
+
+---
+
 ## Session 27 — 2026-07-04 Evaluation V3 — 任务分级 + Verifier 强化 + 指标重定义
 
 **功能**: 评测体系 V3 升级
