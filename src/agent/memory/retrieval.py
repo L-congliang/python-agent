@@ -1,12 +1,12 @@
-"""记忆检索 - 基于关键词和标签的检索
+"""记忆检索 - 基于结构标签和关键词的检索
 
 设计决策:
-- 为什么先看 tag 精确命中？
-  标签是结构化信息，精确度高
+- 为什么先看结构标签匹配？
+  结构标签（kind, entity, file_path）是精确信息，精确度高
   快速过滤，减少后续计算量
 
 - 为什么再看关键词重叠？
-  标签可能不够精确，关键词提供更细粒度匹配
+  结构标签可能不够精确，关键词提供更细粒度匹配
   用简单的字符串包含，不需要复杂的 NLP
 
 - 为什么最后看新近度？
@@ -33,7 +33,7 @@ class RetrievalResult:
     Attributes:
         note: 匹配的笔记
         score: 相关性分数（0-1）
-        match_type: 匹配类型（tag, keyword, recent）
+        match_type: 匹配类型（structure, tag, keyword, recent）
     """
     note: Note
     score: float
@@ -99,7 +99,7 @@ class Retrieval:
         query: str,
         tags: list[str] | None,
     ) -> tuple[float, str]:
-        """计算笔记的相关性分数
+        """计算笔记的相关性分数（结构匹配优先）
 
         Args:
             note: 笔记
@@ -112,14 +112,22 @@ class Retrieval:
         score = 0.0
         match_type = ""
 
-        # 1. 标签精确匹配（最高权重）
+        # 1. 结构标签匹配（最高权重）
+        structure_score = self._score_structure_match(note, query)
+        if structure_score > score:
+            score = structure_score
+            match_type = "structure"
+
+        # 2. 标签精确匹配
         if tags:
             tag_matches = sum(1 for t in tags if t in note.tags)
             if tag_matches > 0:
-                score = 0.8 + (tag_matches * 0.1)
-                match_type = "tag"
+                tag_score = 0.8 + (tag_matches * 0.1)
+                if tag_score > score:
+                    score = tag_score
+                    match_type = "tag"
 
-        # 2. 关键词匹配
+        # 3. 关键词匹配
         if score < 0.8:
             query_lower = query.lower()
             note_lower = note.text.lower()
@@ -135,7 +143,7 @@ class Retrieval:
                     score = keyword_score
                     match_type = "keyword"
 
-        # 3. 新近度（作为 tiebreaker）
+        # 4. 新近度（作为 tiebreaker）
         if score < 0.3:
             # 简单的索引位置作为新近度
             all_notes = self._notes.get_all()
@@ -147,3 +155,65 @@ class Retrieval:
                     match_type = "recent"
 
         return score, match_type
+
+    def _score_structure_match(self, note: Note, query: str) -> float:
+        """计算结构标签匹配分数
+
+        Args:
+            note: 笔记
+            query: 查询文本
+
+        Returns:
+            结构匹配分数（0-1）
+        """
+        score = 0.0
+        query_lower = query.lower()
+        query_words = set(query_lower.split())
+
+        # 1. file_path 匹配（高权重）
+        if note.file_path:
+            file_path_lower = note.file_path.lower()
+            # 检查查询中是否包含文件名
+            file_name = file_path_lower.split("/")[-1].split("\\")[-1]
+            if file_name and file_name in query_lower:
+                score += 0.4
+            # 检查路径关键词重叠
+            path_words = set(file_path_lower.replace("/", " ").replace("\\", " ").replace(".", " ").split())
+            path_overlap = path_words & query_words
+            if path_overlap:
+                score += 0.2 * len(path_overlap)
+
+        # 2. entity 匹配（高权重）
+        if note.entity:
+            entity_lower = note.entity.lower()
+            # 检查查询中是否包含实体名
+            if entity_lower in query_lower:
+                score += 0.5
+            # 检查实体关键词重叠
+            entity_words = set(entity_lower.split("_"))
+            entity_overlap = entity_words & query_words
+            if entity_overlap:
+                score += 0.3 * len(entity_overlap)
+
+        # 3. kind 匹配（中权重）
+        if note.kind:
+            kind_lower = note.kind.lower()
+            # 检查查询中是否包含类型关键词
+            kind_keywords = {
+                "fact": ["what", "value", "number", "string", "exact"],
+                "constraint": ["must", "should", "not", "only", "constraint"],
+                "conflict": ["conflict", "different", "wrong", "error"],
+                "observation": ["notice", "see", "found", "observe"],
+                "decision": ["decide", "choose", "will", "plan"],
+            }
+            if kind_lower in kind_keywords:
+                for keyword in kind_keywords[kind_lower]:
+                    if keyword in query_lower:
+                        score += 0.2
+                        break
+
+        # 4. importance 匹配（低权重）
+        if note.importance == "high":
+            score += 0.1
+
+        return min(score, 1.0)

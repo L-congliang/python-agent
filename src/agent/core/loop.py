@@ -1370,7 +1370,7 @@ class AgentLoop:
         """工具执行成功后的记忆写入
 
         read: touch_file + update_file_summary
-        write/edit: touch_file（摘要在下次 read 时自然更新）
+        write/edit: touch_file + mark_pending_refresh（摘要进入待刷新状态）
         """
         import os
 
@@ -1400,6 +1400,22 @@ class AgentLoop:
                 )
             except OSError:
                 pass  # 文件可能已被删除
+
+        elif tool_call.name in ("write", "edit"):
+            # 写后主动标记摘要为待刷新
+            # 下次 read 时会自动重建摘要
+            self._memory.mark_pending_refresh(abs_path)
+
+            # 记录文件修改事件到 episodic notes
+            self._memory.append_note(
+                text=f"文件 {display_path} 被 {tool_call.name} 修改",
+                tags=["file_modified", tool_call.name],
+                source="tool_execution",
+                kind="observation",
+                entity=display_path.split("/")[-1].split("\\")[-1],
+                file_path=display_path,
+                importance="medium",
+            )
 
     def _memory_after_tool_error(
         self,

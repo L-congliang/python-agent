@@ -1,6 +1,11 @@
 """事件笔记 - 带时间戳和标签的事件记录
 
 设计决策:
+- 为什么升级为结构化标签？
+  原来的 tags 太泛化，无法区分"延迟约束回忆"和"冲突信息判别"
+  结构化标签：kind, entity, file_path, importance
+  支持结构匹配优先，再做关键词匹配
+
 - 为什么限制 500 字符？
   笔记应该是简洁的，不是完整的对话记录
   500 字符足够记录关键信息
@@ -27,16 +32,24 @@ from typing import Any
 
 @dataclass
 class Note:
-    """事件笔记
+    """事件笔记（结构化版本）
 
     Attributes:
         text: 笔记内容（最多 500 字符）
-        tags: 标签列表
+        tags: 标签列表（兼容旧版本）
+        kind: 笔记类型（fact/constraint/conflict/observation/decision）
+        entity: 相关实体（类名、函数名、变量名等）
+        file_path: 相关文件路径
+        importance: 重要性（high/medium/low）
         created_at: 创建时间戳
         source: 来源（user, tool, system）
     """
     text: str
     tags: list[str] = field(default_factory=list)
+    kind: str = ""  # fact/constraint/conflict/observation/decision
+    entity: str = ""
+    file_path: str = ""
+    importance: str = "medium"  # high/medium/low
     created_at: str = ""
     source: str = ""
 
@@ -77,6 +90,10 @@ class EpisodicNotes:
         text: str,
         tags: list[str] | None = None,
         source: str = "",
+        kind: str = "",
+        entity: str = "",
+        file_path: str = "",
+        importance: str = "medium",
     ) -> Note | None:
         """添加笔记（去重）
 
@@ -84,6 +101,10 @@ class EpisodicNotes:
             text: 笔记内容
             tags: 标签列表
             source: 来源
+            kind: 笔记类型
+            entity: 相关实体
+            file_path: 相关文件路径
+            importance: 重要性
 
         Returns:
             添加的 Note，如果重复则返回 None
@@ -98,6 +119,10 @@ class EpisodicNotes:
             text=text,
             tags=tags or [],
             source=source,
+            kind=kind,
+            entity=entity,
+            file_path=file_path,
+            importance=importance,
         )
 
         self._notes.append(note)
@@ -129,6 +154,47 @@ class EpisodicNotes:
             带有该标签的笔记列表
         """
         return [n for n in self._notes if tag in n.tags]
+
+    def get_by_kind(self, kind: str) -> list[Note]:
+        """按类型获取笔记
+
+        Args:
+            kind: 笔记类型
+
+        Returns:
+            该类型的笔记列表
+        """
+        return [n for n in self._notes if n.kind == kind]
+
+    def get_by_entity(self, entity: str) -> list[Note]:
+        """按实体获取笔记
+
+        Args:
+            entity: 实体名称
+
+        Returns:
+            相关实体的笔记列表
+        """
+        return [n for n in self._notes if entity.lower() in n.entity.lower()]
+
+    def get_by_file(self, file_path: str) -> list[Note]:
+        """按文件获取笔记
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            相关文件的笔记列表
+        """
+        return [n for n in self._notes if file_path in n.file_path]
+
+    def get_high_importance(self) -> list[Note]:
+        """获取高重要性笔记
+
+        Returns:
+            高重要性笔记列表
+        """
+        return [n for n in self._notes if n.importance == "high"]
 
     def get_all(self) -> list[Note]:
         """获取所有笔记

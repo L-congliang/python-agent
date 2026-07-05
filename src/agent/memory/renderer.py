@@ -126,7 +126,7 @@ class MemoryRenderer:
         return f"recent_files: {files_str}"
 
     def render_file_summaries(self, summaries: list[dict[str, Any]]) -> str:
-        """渲染 file_summaries 部分
+        """渲染 file_summaries 部分（结构化版本）
 
         Args:
             summaries: select_relevant_file_summaries 返回的列表
@@ -138,9 +138,22 @@ class MemoryRenderer:
             return "file_summaries: -"
         parts = ["file_summaries:"]
         for s in summaries:
-            content = s.get("content", "")
-            preview = content[:80] + "..." if len(content) > 80 else content
-            parts.append(f"  - {s['path']}: {preview}")
+            path = s.get("path", "")
+            responsibility = s.get("responsibility", "")
+            key_entities = s.get("key_entities", [])
+            recent_focus = s.get("recent_focus", "")
+
+            # 构建结构化摘要
+            summary_parts = [f"  - {path}:"]
+            if responsibility:
+                summary_parts.append(f"      职责: {responsibility}")
+            if key_entities:
+                entities_str = ", ".join(key_entities[:5])  # 最多显示 5 个
+                summary_parts.append(f"      关键实体: {entities_str}")
+            if recent_focus:
+                summary_parts.append(f"      最近重点: {recent_focus}")
+
+            parts.append("\n".join(summary_parts))
         return "\n".join(parts)
 
     def render_episodic_notes(self, notes: list[dict[str, Any]]) -> str:

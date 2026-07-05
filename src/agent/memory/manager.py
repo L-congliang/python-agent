@@ -141,6 +141,17 @@ class MemoryManager:
             return summary.content if summary else None
         return None
 
+    def mark_pending_refresh(self, file_path: str) -> None:
+        """标记文件摘要为待刷新
+
+        当文件被 write/edit 修改后，调用此方法标记摘要需要更新。
+        下次 read 时会自动重建摘要。
+
+        Args:
+            file_path: 文件路径
+        """
+        self._files.mark_pending_refresh(file_path)
+
     # ========== 事件笔记操作 ==========
 
     def append_note(
@@ -217,20 +228,24 @@ class MemoryManager:
         query: str,
         top_k: int = 3,
     ) -> list[dict[str, Any]]:
-        """按相关性选择 file summaries
+        """按相关性选择 file summaries（字段级匹配版本）
 
-        规则：recent_files 优先、路径名与 query 关键词重叠、最近访问优先。
+        规则：
+        1. recent_files 优先（归一化匹配）
+        2. 路径名与 query 关键词重叠
+        3. responsibility 与 query 关键词重叠
+        4. key_entities 与 query 关键词重叠
+        5. recent_focus 与 query 关键词重叠
+        6. 最近访问优先
+
         只返回 fresh 的 summaries。
-
-        路径归一化：recent_files 用 display_path（相对路径），file_summaries 用 abs_path。
-        比较时用 basename 和 normpath 双重匹配。
 
         Args:
             query: 查询文本
             top_k: 返回数量
 
         Returns:
-            [{"path": str, "content": str}, ...]
+            [{"path": str, "content": str, "responsibility": str, "key_entities": list, "score": float}, ...]
         """
         import os
 
@@ -249,6 +264,7 @@ class MemoryManager:
             if not self._files.is_fresh(path):
                 continue
             score = 0.0
+
             # 规则1: recent_files 优先（归一化匹配）
             path_basename = os.path.basename(path)
             path_norm = os.path.normpath(path)
@@ -256,19 +272,59 @@ class MemoryManager:
                     or path_basename in recent_normalized
                     or path_norm in recent_normalized):
                 score += 2.0
+
             # 规则2: 路径名与 query 关键词重叠
             path_words = set(path.lower().replace("/", " ").replace(".", " ").split())
             overlap = path_words & query_words
             if overlap:
                 score += 1.0 * len(overlap)
-            results.append({"path": path, "content": summary.content, "score": score})
+
+            # 规则3: responsibility 与 query 关键词重叠
+            if summary.responsibility:
+                resp_words = set(summary.responsibility.lower().split())
+                resp_overlap = resp_words & query_words
+                if resp_overlap:
+                    score += 1.5 * len(resp_overlap)
+
+            # 规则4: key_entities 与 query 关键词重叠
+            if summary.key_entities:
+                entity_words = set()
+                for entity in summary.key_entities:
+                    # 提取实体名称（去掉前缀如 "class:", "func:"）
+                    entity_name = entity.split(":")[-1] if ":" in entity else entity
+                    entity_words.update(entity_name.lower().split("_"))
+                entity_overlap = entity_words & query_words
+                if entity_overlap:
+                    score += 2.0 * len(entity_overlap)
+
+            # 规则5: recent_focus 与 query 关键词重叠
+            if summary.recent_focus:
+                focus_words = set(summary.recent_focus.lower().split())
+                focus_overlap = focus_words & query_words
+                if focus_overlap:
+                    score += 1.0 * len(focus_overlap)
+
+            results.append({
+                "path": path,
+                "content": summary.content,
+                "responsibility": summary.responsibility,
+                "key_entities": summary.key_entities,
+                "recent_focus": summary.recent_focus,
+                "score": score,
+            })
 
         # 按 score 降序排列
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
 
     def assemble_layered(self, query: str, max_tokens: int = 1600) -> str:
-        """分层组装记忆
+        """分层组装记忆（显式策略版本）
+
+        策略：
+        - task: always（总是注入）
+        - recent_files: top 3-5（总是注入）
+        - file_summaries: relevant top-k（按相关性取 top-3）
+        - episodic_notes: hit top 1-3（search_notes 命中后注入）
 
         顺序：task → recent_files → file_summaries → episodic_notes。
         超出 max_tokens 时从后往前截断。
@@ -281,29 +337,43 @@ class MemoryManager:
             组装后的记忆字符串
         """
         layers: list[str] = []
+        injection_stats = {
+            "task": 0,
+            "recent_files": 0,
+            "file_summaries": 0,
+            "episodic_notes": 0,
+        }
 
         # 1. task（总是注入）
         task_str = self._renderer.render_task()
         if task_str:
             layers.append(task_str)
+            injection_stats["task"] = 1
 
-        # 2. recent_files（总是注入）
-        files_str = self._renderer.render_recent_files()
+        # 2. recent_files（top 3-5，总是注入）
+        files_str = self._renderer.render_recent_files(max_files=5)
         layers.append(files_str)
+        recent_files = self._working.get_recent_files()
+        injection_stats["recent_files"] = min(len(recent_files), 5)
 
-        # 3. file_summaries（按相关性取 top-k）
+        # 3. file_summaries（relevant top-3，按相关性取）
         relevant = self.select_relevant_file_summaries(query, top_k=3)
         if relevant:
             summaries_str = self._renderer.render_file_summaries(relevant)
             layers.append(summaries_str)
+            injection_stats["file_summaries"] = len(relevant)
 
-        # 4. episodic_notes（search_notes 命中后注入）
+        # 4. episodic_notes（hit top 1-3，search_notes 命中后注入）
         if query:
             notes = self.search_notes(query, top_k=3)
             if notes:
                 notes_str = self._renderer.render_episodic_notes(notes)
                 if notes_str:
                     layers.append(notes_str)
+                    injection_stats["episodic_notes"] = len(notes)
+
+        # 记录注入统计（用于调试和分析）
+        self._last_injection_stats = injection_stats
 
         result = "\n".join(layers)
 
@@ -318,6 +388,14 @@ class MemoryManager:
                 result = result[:last_newline]
 
         return result
+
+    def get_last_injection_stats(self) -> dict[str, int]:
+        """获取最后一次注入统计
+
+        Returns:
+            注入统计字典
+        """
+        return getattr(self, "_last_injection_stats", {})
 
     # ========== 渲染 ==========
 
