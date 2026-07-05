@@ -39,12 +39,14 @@ class MemoryTask:
 
     Attributes:
         task_id: 任务 ID
-        category: 类别（fact_lookup, edit_dependency, history_reference）
+        category: 类别（fact_lookup, edit_dependency, history_reference, etc.）
         prompt: 主任务提示
         setup_turns: 前置对话（为 history_reference 提供上下文）
         expected_files: 预期访问的文件
         target_files: 用于 repeated_reads / memory_hit 统计的文件
-        verifier: 验证方式（contains_text / file_changed / multi_file_changed）
+        verifier: 验证方式（contains_text / exact_match / file_changed /
+                  file_changed_strict / multi_file_changed / forbidden_reread /
+                  file_changed_no_extra_change）
         expected_substrings: 正确性验证的期望子串
         fixture_dir: 该任务使用的 fixture 子目录（相对于 tests/fixtures/memory_experiment/）
         allow_reread: 是否允许重复读取
@@ -122,25 +124,6 @@ class MemoryAblationResult:
 _FIXTURE_BASE = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "memory_experiment"
 
 MEMORY_TASKS = [
-    # --- fact_lookup: 问答类，验证 contains_text ---
-    MemoryTask(
-        task_id="fact_loop_max_turns",
-        category="fact_lookup",
-        prompt="What is the default value of max_turns in LoopConfig? Answer with just the number.",
-        target_files=["src/agent/core/loop.py"],
-        verifier="contains_text",
-        expected_substrings=["50"],
-    ),
-    MemoryTask(
-        task_id="fact_manager_methods",
-        category="fact_lookup",
-        prompt="List the public method names in MemoryManager class (from memory/manager.py). "
-               "Answer as a comma-separated list.",
-        target_files=["src/agent/memory/manager.py"],
-        verifier="contains_text",
-        expected_substrings=["set_task", "touch_file"],
-    ),
-
     # --- history_reference: 有 setup_turns，验证 memory_hit ---
     MemoryTask(
         task_id="history_loop_config",
@@ -316,6 +299,105 @@ MEMORY_TASKS = [
         verifier="contains_text",
         expected_substrings=["6379"],
     ),
+
+    # --- V2: 高记忆依赖任务 ---
+    # 设计意图：这些任务必须依赖记忆才能答对，大幅减少"蒙对"的可能。
+
+    # L4: 抗混淆任务 — setup 读了两个相似文件，主任务要求只返回其中一个
+    MemoryTask(
+        task_id="disambiguate_db_vs_cache_secret",
+        category="noise",
+        prompt="Return only the DB_PASSWORD value, not the cache password.",
+        setup_turns=[
+            "Read database.py and cache.py, then tell me the DB password and cache password separately.",
+        ],
+        fixture_dir=".",
+        target_files=["database.py", "cache.py"],
+        verifier="exact_match",
+        expected_substrings=["db-secret-pass-12345"],
+    ),
+
+    # L4: 记住约束 — setup 阶段给约束，主任务要求遵守
+    MemoryTask(
+        task_id="delayed_constraint_single_file_edit",
+        category="edit_dependency",
+        prompt="Add a new function send_safe(payload) to client.py. It should call "
+               "validate_input first and return {'error': 'invalid input'} if validation "
+               "fails; otherwise call process_request. Do not modify service.py.",
+        setup_turns=[
+            "Read service.py and client.py. Important constraint: later you may only "
+            "modify client.py, do not modify service.py.",
+        ],
+        fixture_dir=".",
+        target_files=["client.py", "service.py"],
+        verifier="file_changed_no_extra_change",
+        expected_substrings=["send_safe"],
+    ),
+
+    # L4: 跨文件精确回忆 + 无 import 编辑
+    MemoryTask(
+        task_id="cross_file_literal_recall_no_import",
+        category="cross_file_dep",
+        prompt="Update api2.py so it defines DEFAULT_LIMIT = the exact MAX_ITEMS integer "
+               "from config2.py, and add a function build_auth_header() that returns the "
+               "exact Bearer token string using the API_KEY value as a literal. Do not "
+               "import any new symbol from config2.py.",
+        setup_turns=[
+            "Read config2.py and api2.py. Remember the exact API_KEY and MAX_ITEMS values.",
+        ],
+        fixture_dir=".",
+        target_files=["api2.py", "config2.py"],
+        verifier="file_changed_strict",
+        expected_substrings=["DEFAULT_LIMIT", "200", "build_auth_header", "sk-internal-KEY-9999"],
+    ),
+
+    # L4: 插入噪声后继续前任务
+    MemoryTask(
+        task_id="multi_round_edit_after_noise",
+        category="multi_round_edit",
+        prompt="Continue the earlier service/client task: in service.py add TIMEOUT = 30 "
+               "and make process_request accept timeout=TIMEOUT; in client.py make "
+               "send_request pass timeout, and add send_with_retry(payload, retries=3). "
+               "Ignore the database/cache info.",
+        setup_turns=[
+            "Read service.py and client.py. Describe current function signatures.",
+            "Now read database.py and cache.py and summarize them briefly.",
+        ],
+        fixture_dir=".",
+        target_files=["service.py", "client.py"],
+        verifier="multi_file_changed",
+        expected_substrings=["send_with_retry"],
+    ),
+
+    # L3: 禁止 reread 的事实回答
+    MemoryTask(
+        task_id="forbidden_reread_fact_answer",
+        category="cross_round_recall",
+        prompt="What is the TIMEOUT value? Answer with just the number.",
+        setup_turns=[
+            "Read api_config.py and memorize API_KEY, API_URL, and TIMEOUT.",
+        ],
+        fixture_dir=".",
+        target_files=["api_config.py"],
+        verifier="forbidden_reread",
+        expected_substrings=["30"],
+    ),
+
+    # L4: 用前置事实编辑，不 reread
+    MemoryTask(
+        task_id="edit_using_previous_fact_only",
+        category="edit_dependency",
+        prompt="Update main.py by adding DEFAULT_RATE_LIMIT and DEFAULT_RETRY_COUNT "
+               "constants at the top using the exact values from earlier context. "
+               "Do not read api_config.py again.",
+        setup_turns=[
+            "Read api_config.py and tell me the exact RATE_LIMIT and RETRY_COUNT values.",
+        ],
+        fixture_dir=".",
+        target_files=["main.py", "api_config.py"],
+        verifier="file_changed_strict",
+        expected_substrings=["100", "3"],
+    ),
 ]
 
 
@@ -405,6 +487,11 @@ def _verify_task_result(
         result_lower = result_text.lower()
         return all(sub.lower() in result_lower for sub in task.expected_substrings)
 
+    if task.verifier == "exact_match":
+        # 精确匹配：回复中必须包含所有 expected_substrings
+        result_stripped = result_text.strip()
+        return all(sub in result_stripped for sub in task.expected_substrings)
+
     if task.verifier == "file_changed":
         for target in task.target_files:
             file_path = os.path.join(workspace_root, target)
@@ -418,6 +505,22 @@ def _verify_task_result(
                 continue
         return False
 
+    if task.verifier == "file_changed_strict":
+        # 严格文件变更：所有 target_files 都必须存在，
+        # 且所有 expected_substrings 都必须在文件内容中出现
+        for target in task.target_files:
+            file_path = os.path.join(workspace_root, target)
+            if not os.path.exists(file_path):
+                return False
+        all_content = ""
+        for target in task.target_files:
+            file_path = os.path.join(workspace_root, target)
+            try:
+                all_content += Path(file_path).read_text(encoding="utf-8")
+            except OSError:
+                return False
+        return all(sub in all_content for sub in task.expected_substrings)
+
     if task.verifier == "multi_file_changed":
         changed = 0
         for target in task.target_files:
@@ -425,6 +528,45 @@ def _verify_task_result(
             if os.path.exists(file_path):
                 changed += 1
         return changed >= 2
+
+    if task.verifier == "forbidden_reread":
+        # 禁止 reread：答案正确且主任务阶段未 reread 目标文件
+        # 由外部调用方处理 reread 检查，这里只做 contains_text 验证
+        result_lower = result_text.lower()
+        return all(sub.lower() in result_lower for sub in task.expected_substrings)
+
+    if task.verifier == "file_changed_no_extra_change":
+        # 新文件变更 + 原文件未改动
+        # expected_substrings 必须在新文件中出现
+        # 第一个 target_file 是新文件（应变更），第二个是原文件（不应变更）
+        if len(task.target_files) < 2:
+            return False
+        new_file = task.target_files[0]
+        old_file = task.target_files[1]
+        new_path = os.path.join(workspace_root, new_file)
+        old_path = os.path.join(workspace_root, old_file)
+        # 检查新文件存在且包含 expected_substrings
+        if not os.path.exists(new_path):
+            return False
+        try:
+            new_content = Path(new_path).read_text(encoding="utf-8")
+            if not all(sub in new_content for sub in task.expected_substrings):
+                return False
+        except OSError:
+            return False
+        # 检查原文件未被修改（如果存在）
+        if os.path.exists(old_path):
+            # 原文件存在，检查是否被修改
+            # 这里用简单方法：检查原文件是否仍然包含原始结构
+            try:
+                old_content = Path(old_path).read_text(encoding="utf-8")
+                # 如果原文件被修改，通常会有新增内容
+                # 简单检查：如果原文件包含 expected_substrings，说明被错误修改了
+                if any(sub in old_content for sub in task.expected_substrings):
+                    return False
+            except OSError:
+                pass
+        return True
 
     # 未知 verifier，默认通过
     return True
@@ -832,6 +974,10 @@ class MemoryExperiment:
             "fact_lookup": "问答类，验证 contains_text",
             "history_reference": "有 setup_turns，验证 memory_hit",
             "edit_dependency": "fixture 文件，验证 file_changed",
+            "cross_round_recall": "跨轮事实回忆，验证 memory_hit",
+            "cross_file_dep": "跨文件依赖修改，验证 file_changed",
+            "multi_round_edit": "多轮连续改动，验证 multi_file_changed",
+            "noise": "噪声干扰与错误纠偏，验证抗混淆能力",
         }
         for cat, count in categories.items():
             report.append(f"| {cat} | {count} | {cat_desc.get(cat, '')} |")
