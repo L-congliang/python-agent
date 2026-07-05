@@ -1,9 +1,9 @@
 # P2 Memory Experiment - Formal Report
 
-> 执行日期: 2026-07-04
-> Commit: 15152b3cbd9b41bcb8b2d07430e53504b5e43100
+> 执行日期: 2026-07-04（V1）/ 2026-07-04（V2）
+> Commit: 15152b3（V1）/ cba0734（V2 异常感知版）/ e433607（V2 实验结果）
 > Model: mimo-v2.5-pro
-> 任务集: 14 tasks, 7 categories
+> 任务集: 14 tasks（V1）/ 18 tasks（V2）
 
 ## 一、实验配置
 
@@ -203,3 +203,77 @@
 **机制描述**: 建立 memory_on/off/irrelevant 三组对照评测体系，5 轮正式量化实验，覆盖 14 个任务 × 7 类场景。
 
 **结果描述**: 当前任务集中，记忆系统对正确率的提升幅度较小（1.4pp），低于可写入阈值。需要优化任务集以增加对记忆的依赖度。
+
+---
+
+## 十、V2 实验升级（2026-07-04）
+
+### 10.1 V2 任务集升级
+
+**新增 6 个高记忆依赖任务**（从 14 个增加到 18 个）：
+
+| task_id | 类别 | verifier | 级别 | 设计意图 |
+|---------|------|----------|------|----------|
+| disambiguate_db_vs_cache_secret | noise | exact_match | L4 | 抗混淆精确回忆 |
+| delayed_constraint_single_file_edit | edit_dependency | file_changed_no_extra_change | L4 | 记住约束再编辑 |
+| cross_file_literal_recall_no_import | cross_file_dep | file_changed_strict | L4 | 跨文件精确回忆无 import |
+| multi_round_edit_after_noise | multi_round_edit | multi_file_changed | L4 | 噪声后继续前任务 |
+| forbidden_reread_fact_answer | cross_round_recall | forbidden_reread | L3 | 禁止 reread 的事实回答 |
+| edit_using_previous_fact_only | edit_dependency | file_changed_strict | L4 | 用前置事实编辑 |
+
+**新增 4 个 verifier 类型**：
+- `exact_match`: 精确字符串匹配
+- `file_changed_strict`: 严格文件变更（所有子串都必须出现）
+- `forbidden_reread`: 答案正确且未 reread
+- `file_changed_no_extra_change`: 新文件变更 + 原文件未改动
+
+**移除 2 个弱任务**：
+- `fact_loop_max_turns`（fact_lookup，太容易）
+- `fact_manager_methods`（fact_lookup，太容易）
+
+### 10.2 V2 Smoke Test 结果
+
+| 配置 | correct_rate | 失败任务数 |
+|------|-------------|----------|
+| **memory_on** | **100%** | 0 |
+| memory_off | 78% | 4 |
+| memory_irrelevant | 89% | 2 |
+
+**关键发现**：
+- memory_on vs memory_off 差距从 V1 的 1.4pp 扩大到 **22pp**
+- 新任务成功放大了记忆价值
+- memory_off 失败的任务都是新增的高记忆依赖任务
+
+### 10.3 V2 正式实验（异常感知版）
+
+**实验脚本改造**：
+- 任务结果补 `failed_reason` / `is_abnormal` / `abnormal_reason`
+- 429/网络/服务异常标记为 `abnormal`（不进正式统计）
+- config 级异常判定：有异常任务的 config 不进正式均值
+- 延迟提升：任务间 15s，config 间 45s
+
+**实验结果**：
+
+| 配置 | 干净轮次 | 异常轮次 | 异常原因 |
+|------|---------|---------|---------|
+| memory_on | 0 | 5 | 全部 429 |
+| memory_off | 1 | 4 | 429 |
+| memory_irrelevant | 3 | 2 | 429 |
+
+**结论**：因 API 429 限流，所有轮次被标记为异常，不纳入正式统计。
+
+### 10.4 V2 异常分析
+
+**429 限流原因**：
+- memory_on 每个任务都需要模型调用，最容易撞限流
+- memory_irrelevant 相对干净，因为有些任务不需要工具调用
+- 当前延迟（任务间 15s，config 间 45s）仍不足以避免限流
+
+**下一步方案**：
+1. **分批跑**：每次只跑 1 个 config，分三批完成（最稳）
+2. **增加延迟**：任务间 30s，config 间 120s
+3. **等限流恢复**：等几个小时后重跑
+
+### 10.5 对外口径
+
+> "V2 正式实验因 API 429 触发异常轮次判定，当前结果不纳入效果结论；已定位为实验调度问题而非记忆机制本身问题，下一步将补充异常归因与更强节流后重跑正式实验。"
