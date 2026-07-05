@@ -1,5 +1,46 @@
 # 进度日志
 
+## Session 27 — 2026-07-04 Evaluation V3 — 任务分级 + Verifier 强化 + 指标重定义
+
+**功能**: 评测体系 V3 升级
+**状态**: ✅ 完成
+
+### 做了什么
+
+1. **MemoryTask 扩容与分级** — 新增 dependency_level 字段（L1/L2/L3/L4）+ 更强约束字段
+2. **Verifier 升级** — exact_match / structured_match / file_changed_no_extra_change / forbidden_reread
+3. **指标重定义** — 降级 memory_hit_rate，新增 memory_dependent_success_rate 等
+4. **报告增强** — 按 L1-L4 分组 + clean rounds 显式章节
+
+### 任务分级
+
+| 等级 | 数量 | 说明 |
+|------|------|------|
+| L1 | 1 | 不需要记忆也能答对 |
+| L2 | 7 | 记忆有帮助但不是必须 |
+| L3 | 5 | 记忆显著提升效率 |
+| L4 | 5 | 没有记忆几乎不可能答对 |
+
+### 新增指标
+
+| 指标 | 定义 | 用途 |
+|------|------|------|
+| memory_dependent_success_rate | L3/L4 任务的正确率 | **主效果指标** |
+| target_reread_rate | 主任务阶段重读目标文件的比例 | 效率指标 |
+| answer_without_reread_rate | setup_turns 后不重读就能答对的比例 | 效率指标 |
+
+### 下一步
+
+1. **记忆系统 V2** — 优化记忆注入策略
+2. **重开正式实验** — 使用 V3 评测体系重跑
+
+### 沉淀
+
+- 代码：`src/agent/evaluation/memory_experiment.py`
+- 提交：35a75cb
+
+---
+
 ## Session 26 — 2026-07-04 Memory V2 — 任务升级 + 异常感知实验
 
 **功能**: P2 记忆系统 — V2 任务升级 + 异常感知实验脚本
