@@ -125,6 +125,13 @@
           "file": "core/loop.py, memory/renderer.py",
           "status": "done",
           "description": "记忆渲染（紧凑格式）+ 读路径注入 prompt + 写路径自动回写（set_task/touch_file/update_file_summary/append_note/save）+ memory_enabled 开关"
+        },
+        {
+          "id": "P2.5",
+          "name": "记忆系统 V2 升级 + 正式量化实验",
+          "file": "memory/file_summaries.py, memory/episodic.py, memory/retrieval.py, memory/manager.py",
+          "status": "done",
+          "description": "结构化摘要 + 检索强化 + 注入策略显式化 + 15 轮正式实验 (memory_on/off/irrelevant × 5 轮)"
         }
       ]
     },

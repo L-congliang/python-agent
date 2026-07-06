@@ -1,5 +1,47 @@
 # 进度日志
 
+## Session 29 — 2026-07-06 P2 记忆系统 V2 正式量化实验
+
+**功能**: P2 记忆系统正式量化实验
+**状态**: ✅ 完成
+
+### 做了什么
+
+1. **冻结实验版本** — commit `daf9a48` (Memory V2 + Evaluation V3)
+2. **回归测试** — 修复 verifier 白名单，36 tests passed
+3. **Smoke Test** — memory_on 4 个 L3/L4 任务通过
+4. **正式实验** — 3 组配置 × 5 轮 = 15 轮实验
+5. **汇总报告** — 生成正式量化实验报告
+
+### 实验结果
+
+| Config | 轮次 | Clean | memory_dependent_success_rate |
+|--------|------|-------|-------------------------------|
+| memory_on | 5 | 5 | **96.00%** |
+| memory_off | 5 | 5 | **94.00%** |
+| memory_irrelevant | 5 | 4 | **97.50%** |
+
+### 关键结论
+
+**当前 18 个任务 + mimo v2.5pro 模型下，记忆系统的效果不显著。**
+
+- 三组差异仅 3.5%，在实验波动范围内
+- memory_irrelevant 表现最好 (97.50%)
+- 模型本身推理能力足够强，记忆增益被掩盖
+
+### 修复的 Bug
+
+- verifier 白名单缺少新 verifier 类型
+- `MemoryManager.append_note()` 未传递 V2 新增参数 (kind/entity/file_path/importance)
+
+### 产物
+
+- 15 份单轮报告: `docs/test-reports/P2-memory-v2-{config}-round{N}.md`
+- 汇总报告: `docs/test-reports/P2-memory-v2-formal-summary.md`
+- 实验脚本: `scripts/run_formal_experiment.py`
+
+---
+
 ## Session 28 — 2026-07-04 Memory V2 — 结构化摘要 + 检索强化 + 注入策略显式化
 
 **功能**: 记忆系统 V2 升级
