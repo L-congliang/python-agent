@@ -453,6 +453,127 @@ MEMORY_TASKS = [
         allowed_files=["main.py"],
         no_extra_changes=True,
     ),
+
+    # === V4-A: 高难度 L3/L4 任务 ===
+
+    # L4: edit_using_previous_fact_only 的强化版 — 双常量精确写入
+    MemoryTask(
+        task_id="delayed_dual_constant_edit",
+        category="edit_dependency",
+        dependency_level="L4",
+        prompt="Update main.py by adding DEFAULT_RATE_LIMIT and DEFAULT_RETRY_COUNT "
+               "constants at the top using the exact earlier values. "
+               "Do not read api_config.py again.",
+        setup_turns=[
+            "Read api_config.py and tell me the exact RATE_LIMIT and RETRY_COUNT values.",
+        ],
+        fixture_dir=".",
+        target_files=["main.py"],
+        verifier="file_changed_strict",
+        expected_substrings=["DEFAULT_RATE_LIMIT = 100", "DEFAULT_RETRY_COUNT = 3"],
+        forbidden_reads=["api_config.py"],
+        allowed_files=["main.py"],
+        no_extra_changes=True,
+    ),
+
+    # L4: 冲突信息精确取两项 — 减少蒙对概率
+    MemoryTask(
+        task_id="conflict_secret_disambiguation_strict",
+        category="noise",
+        dependency_level="L4",
+        prompt='Return a JSON object with exactly two fields: '
+               '{"db_password": "...", "cache_port": ...}. '
+               "Do not include cache password or db port.",
+        setup_turns=[
+            "Read database.py and cache.py. "
+            "Summarize DB_PASSWORD, CACHE_PASSWORD, DB_PORT, and CACHE_PORT separately.",
+        ],
+        fixture_dir=".",
+        target_files=["database.py", "cache.py"],
+        verifier="structured_match",
+        expected_substrings=['"db_password"', 'db-secret-pass-12345', '"cache_port"', '6379'],
+    ),
+
+    # L4: 跨文件字面量捆绑回忆 + 无 import 编辑
+    MemoryTask(
+        task_id="cross_file_literal_bundle_no_reread",
+        category="cross_file_dep",
+        dependency_level="L4",
+        prompt="Update api2.py so it defines DEFAULT_LIMIT using the exact MAX_ITEMS "
+               "literal and adds build_auth_header() returning the exact Bearer token "
+               "string. Do not read config2.py again and do not add new imports.",
+        setup_turns=[
+            "Read config2.py and api2.py. Remember the exact API_KEY and MAX_ITEMS values.",
+        ],
+        fixture_dir=".",
+        target_files=["api2.py"],
+        verifier="file_changed_no_extra_change",
+        expected_substrings=["DEFAULT_LIMIT = 200", "Bearer sk-internal-KEY-9999", "build_auth_header"],
+        forbidden_reads=["config2.py"],
+        allowed_files=["api2.py"],
+        no_extra_changes=True,
+    ),
+
+    # L4: 噪声后继续主线任务 — 测记忆抗干扰能力
+    MemoryTask(
+        task_id="resume_multi_edit_after_irrelevant_round",
+        category="multi_round_edit",
+        dependency_level="L4",
+        prompt="Continue the earlier service/client refactor only: in service.py add "
+               "TIMEOUT = 30 and make process_request accept timeout=TIMEOUT; in client.py "
+               "pass timeout in send_request and add send_with_retry(payload, retries=3). "
+               "Ignore the database/cache information.",
+        setup_turns=[
+            "Read service.py and client.py. Describe how validate_input, process_request, "
+            "send_request, and batch_send currently work.",
+            "Now read database.py and cache.py and summarize them.",
+        ],
+        fixture_dir=".",
+        target_files=["service.py", "client.py"],
+        verifier="multi_file_changed",
+        expected_substrings=["TIMEOUT = 30", "timeout", "send_with_retry"],
+    ),
+
+    # L4: 延迟约束保持 — 主要测约束记忆而非代码能力
+    MemoryTask(
+        task_id="constraint_then_edit_single_target",
+        category="edit_dependency",
+        dependency_level="L4",
+        prompt="Add send_safe(payload) to client.py. It should validate input first, "
+               "then call process_request, and return {'error': 'invalid input'} if "
+               "validation fails.",
+        setup_turns=[
+            "Read service.py and client.py. Important later constraint: you may only "
+            "modify client.py, never modify service.py.",
+        ],
+        fixture_dir=".",
+        target_files=["client.py"],
+        verifier="file_changed_no_extra_change",
+        expected_substrings=["send_safe", "invalid input"],
+        allowed_files=["client.py"],
+        no_extra_changes=True,
+    ),
+
+    # L3: 多字段禁止 reread — 比单值 recall 更难
+    MemoryTask(
+        task_id="forbidden_reread_multi_fact_answer",
+        category="cross_round_recall",
+        dependency_level="L3",
+        prompt="Return exactly this format: API_URL=<value>; TIMEOUT=<value>; "
+               "RETRY_COUNT=<value>. Do not read api_config.py again.",
+        setup_turns=[
+            "Read api_config.py and memorize API_URL, RATE_LIMIT, TIMEOUT, and RETRY_COUNT.",
+        ],
+        fixture_dir=".",
+        target_files=["api_config.py"],
+        verifier="forbidden_reread",
+        expected_substrings=[
+            "API_URL=https://api.production.internal/v2",
+            "TIMEOUT=30",
+            "RETRY_COUNT=3",
+        ],
+        forbidden_reads=["api_config.py"],
+    ),
 ]
 
 
