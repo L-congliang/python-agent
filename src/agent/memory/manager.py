@@ -159,6 +159,10 @@ class MemoryManager:
         text: str,
         tags: list[str] | None = None,
         source: str = "",
+        kind: str = "",
+        entity: str = "",
+        file_path: str = "",
+        importance: str = "",
     ) -> bool:
         """添加事件笔记
 
@@ -166,11 +170,15 @@ class MemoryManager:
             text: 笔记内容
             tags: 标签
             source: 来源
+            kind: 笔记类型 (fact/constraint/conflict/observation/decision)
+            entity: 关联实体
+            file_path: 关联文件路径
+            importance: 重要性 (high/medium/low)
 
         Returns:
             是否成功添加（False 表示重复）
         """
-        note = self._notes.append(text, tags, source)
+        note = self._notes.append(text, tags, source, kind, entity, file_path, importance)
         return note is not None
 
     def search_notes(
