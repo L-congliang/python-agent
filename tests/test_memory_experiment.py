@@ -79,7 +79,7 @@ class TestMemoryTasks:
     def test_all_have_verifier(self) -> None:
         """所有任务都有 verifier"""
         for task in MEMORY_TASKS:
-            assert task.verifier in ("contains_text", "file_changed", "multi_file_changed")
+            assert task.verifier in ("contains_text", "file_changed", "multi_file_changed", "exact_match", "structured_match", "file_changed_no_extra_change", "forbidden_reread", "file_changed_strict")
 
     def test_history_tasks_have_setup_turns(self) -> None:
         """需要 setup_turns 的任务类别必须有 setup_turns"""
