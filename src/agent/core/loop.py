@@ -116,6 +116,7 @@ class LoopConfig:
 
     # Session 持久化
     session_dir: str | None = None  # None 表示不持久化 session
+    enable_autosave: bool = True  # 是否启用自动保存
 
     # 多 Agent 配置
     enable_subagent: bool = True  # 是否启用 SubAgentTool
@@ -826,6 +827,8 @@ class AgentLoop:
         # 清空 session policy
         if self._session_policy is not None:
             self._session_policy.clear()
+        # 重置 session_id，下次 save_session 时生成新 session
+        self._session_id = None
         logger.info("Agent loop reset")
 
     @property
@@ -931,7 +934,8 @@ class AgentLoop:
         Args:
             state: session 状态字典
         """
-        self._session_id = state.get("session_id")
+        # 兼容两种字段名：session_id（export 导出）和 id（SessionStore 存储）
+        self._session_id = state.get("session_id") or state.get("id")
         self._messages = state.get("messages", [])
         self._turn_count = state.get("turn_count", 0)
         self._tool_call_count = state.get("tool_call_count", 0)
@@ -951,7 +955,7 @@ class AgentLoop:
         Returns:
             session_id，如果未启用 session store 则返回 None
         """
-        if self._session_store is None:
+        if self._session_store is None or not self._config.enable_autosave:
             return None
 
         state = self.export_session_state()

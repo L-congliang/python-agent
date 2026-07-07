@@ -187,6 +187,23 @@ A：
 
 这个设计让 session 不再只是内存态，而是可持久化、可恢复、可回看。
 
+## Q：你怎么实现 session 自动保存？
+
+A：
+
+我实现了 Session Autosave，让 session 持久化进入默认使用体验：
+
+1. **enable_autosave 配置**：LoopConfig 增加 enable_autosave，默认 True
+2. **save_session() 检查**：禁用时返回 None，不保存
+3. **reset() 清空 session_id**：下次 save_session 时生成新 session
+4. **import_session_state() 兼容**：兼容 session_id 和 id 两种字段名
+
+这个设计让：
+- 默认入口启动后无需手动调 save_session()
+- 一轮正常消息后必有 session 文件落盘
+- /reset 后新旧 session 分离
+- --resume latest 恢复后继续自动保存
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：

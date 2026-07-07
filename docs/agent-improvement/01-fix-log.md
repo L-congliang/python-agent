@@ -61,6 +61,29 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 3.1 Task 4
+
+### Fix 1：默认入口接线 + Autosave
+
+新增：
+- `tests/test_session_autosave.py`
+
+修改：
+- `src/agent/core/loop.py`：LoopConfig 增加 enable_autosave，save_session 检查配置，reset 清空 session_id，import_session_state 兼容 id/session_id
+
+内容：
+- LoopConfig 增加 enable_autosave 配置
+- save_session() 检查 enable_autosave，禁用时返回 None
+- reset() 清空 session_id，下次 save_session 时生成新 session
+- import_session_state() 兼容 session_id 和 id 两种字段名
+
+结果：
+- 默认入口启动后无需手动调 save_session()
+- 一轮正常消息后必有 session 文件落盘
+- /reset 后新旧 session 分离
+- --resume latest 恢复后继续自动保存
+- 测试基线从 1017 提升到 1033
+
 ## Phase 3.1 Task 1
 
 ### Fix 1：无损 Session Persistence + Resume
