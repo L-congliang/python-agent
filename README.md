@@ -42,6 +42,7 @@
 - **真实远程 LLM Smoke**：验证真实 API 链路没断（需 RUN_REAL_LLM_SMOKE=1 + MIMO_API_KEY）
 - **Session 持久化与恢复**：--resume latest / --resume <session_id>
 - **Session Autosave**：默认入口自动保存，/reset 后新旧 session 分离
+- **Inspect CLI**：/session、/sessions、/inspect 查看当前状态
 - 中文文档包，适合 demo、复习和面试准备
 
 ## 架构概览

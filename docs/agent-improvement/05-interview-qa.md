@@ -204,6 +204,32 @@ A：
 - /reset 后新旧 session 分离
 - --resume latest 恢复后继续自动保存
 
+## Q：你怎么让用户看到 session/run/workspace 状态？
+
+A：
+
+我实现了 Run / Session / Workspace Inspect CLI：
+
+1. **Loop 摘要接口**：
+   - `get_session_summary()`：当前 session 摘要
+   - `list_recent_sessions()`：最近 sessions 列表
+   - `get_run_summary()`：当前 run 摘要
+   - `get_workspace_summary()`：workspace 摘要
+   - `get_checkpoint_summary()`：checkpoint 摘要
+   - `get_inspect_summary()`：综合摘要
+
+2. **CLI 命令**：
+   - `/session`：显示当前 session_id、workspace、message_count
+   - `/sessions`：列出最近 5 个 session 摘要
+   - `/inspect`：显示 run/session/workspace/checkpoint 摘要
+
+3. **边界处理**：
+   - 没有 session 时显示"没有活动 session"
+   - 没有 checkpoint 时显示"未启用"
+   - 命令不触发真实模型请求
+
+这个设计让用户能一眼看出"当前跑的是哪个 session、哪个 run、在哪个 workspace"。
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：

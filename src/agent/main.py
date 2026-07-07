@@ -129,12 +129,27 @@ def create_agent_app(loop: AgentLoop, *, model: str) -> AgentApp:
             return []
         return loop._edit_history_store.get_all()
 
+    def _on_session() -> dict | None:
+        """获取当前 session 摘要"""
+        return loop.get_session_summary()
+
+    def _on_sessions() -> list:
+        """列出最近 sessions"""
+        return loop.list_recent_sessions()
+
+    def _on_inspect() -> dict:
+        """获取 inspect 摘要"""
+        return loop.get_inspect_summary()
+
     app = AgentApp(
         on_message=create_message_handler(loop),
         on_compact=loop.compact,
         on_reset=loop.reset,
         on_rollback=_on_rollback,
         on_history=_on_history,
+        on_session=_on_session,
+        on_sessions=_on_sessions,
+        on_inspect=_on_inspect,
         model=model,
     )
     loop.set_permission_handler(app.confirm_permission)

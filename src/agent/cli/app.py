@@ -103,6 +103,9 @@ class AgentApp:
         on_reset: Callable[[], None] | None = None,
         on_rollback: Callable[[], tuple[bool, str]] | None = None,
         on_history: Callable[[], list[Any]] | None = None,
+        on_session: Callable[[], dict[str, Any] | None] | None = None,
+        on_sessions: Callable[[], list[dict[str, Any]]] | None = None,
+        on_inspect: Callable[[], dict[str, Any]] | None = None,
         model: str = "mimo-v2.5-pro",
         version: str = "0.1.0",
     ) -> None:
@@ -122,6 +125,9 @@ class AgentApp:
         self.on_reset = on_reset
         self.on_rollback = on_rollback
         self.on_history = on_history
+        self.on_session = on_session
+        self.on_sessions = on_sessions
+        self.on_inspect = on_inspect
         self.model = model
         self.version = version
         self._stream_buffer: str = ""
@@ -457,6 +463,9 @@ class AgentApp:
   /compact   - 压缩上下文历史
   /history   - 显示编辑历史
   /rollback  - 回退最近一次修改
+  /session   - 显示当前 session 信息
+  /sessions  - 列出最近 sessions
+  /inspect   - 显示当前运行态摘要
   /exit      - 退出程序
   /quit      - 退出程序
 
@@ -521,6 +530,84 @@ class AgentApp:
                     self.console.print(f"[red]回退失败: {e}[/red]")
             else:
                 self.console.print("[yellow]回退功能未启用[/yellow]")
+            return True
+
+        if cmd == "/session":
+            if self.on_session:
+                try:
+                    summary = self.on_session()
+                    if summary is None:
+                        self.console.print("[yellow]没有活动 session[/yellow]")
+                    else:
+                        self.console.print(f"[bold {BRAND_COLOR}]当前 Session:[/]")
+                        self.console.print(f"  session_id: {summary.get('session_id', 'N/A')}")
+                        self.console.print(f"  workspace:  {summary.get('workspace_root', 'N/A')}")
+                        self.console.print(f"  messages:   {summary.get('message_count', 0)}")
+                except Exception as e:
+                    self.console.print(f"[red]获取 session 信息失败: {e}[/red]")
+            else:
+                self.console.print("[yellow]session 功能未启用[/yellow]")
+            return True
+
+        if cmd == "/sessions":
+            if self.on_sessions:
+                try:
+                    sessions = self.on_sessions()
+                    if not sessions:
+                        self.console.print("[yellow]暂无 session 记录[/yellow]")
+                    else:
+                        self.console.print(f"[bold {BRAND_COLOR}]最近 Sessions:[/]")
+                        for i, s in enumerate(sessions[:5], 1):  # 只显示最近 5 个
+                            sid = s.get("id", "N/A")[:12]
+                            created = s.get("created_at", "N/A")[:19]
+                            msg_count = s.get("message_count", 0)
+                            self.console.print(f"  {i}. {sid}  {created}  ({msg_count} msgs)")
+                except Exception as e:
+                    self.console.print(f"[red]获取 sessions 失败: {e}[/red]")
+            else:
+                self.console.print("[yellow]session 功能未启用[/yellow]")
+            return True
+
+        if cmd == "/inspect":
+            if self.on_inspect:
+                try:
+                    summary = self.on_inspect()
+
+                    # Run 信息
+                    run = summary.get("run", {})
+                    self.console.print(f"[bold {BRAND_COLOR}]Run:[/]")
+                    self.console.print(f"  run_id:     {run.get('run_id', 'N/A')}")
+                    self.console.print(f"  model:      {run.get('model', 'N/A')}")
+                    self.console.print(f"  turns:      {run.get('turn_count', 0)}")
+                    self.console.print(f"  tool_calls: {run.get('tool_call_count', 0)}")
+
+                    # Session 信息
+                    session = summary.get("session")
+                    self.console.print(f"[bold {BRAND_COLOR}]Session:[/]")
+                    if session is None:
+                        self.console.print("  (无活动 session)")
+                    else:
+                        self.console.print(f"  session_id: {session.get('session_id', 'N/A')}")
+                        self.console.print(f"  messages:   {session.get('message_count', 0)}")
+
+                    # Workspace 信息
+                    workspace = summary.get("workspace", {})
+                    self.console.print(f"[bold {BRAND_COLOR}]Workspace:[/]")
+                    self.console.print(f"  root:       {workspace.get('workspace_root', 'N/A')}")
+                    self.console.print(f"  git_branch: {workspace.get('git_branch', 'N/A')}")
+                    self.console.print(f"  commits:    {workspace.get('recent_commits_count', 0)}")
+
+                    # Checkpoint 信息
+                    checkpoint = summary.get("checkpoint")
+                    self.console.print(f"[bold {BRAND_COLOR}]Checkpoint:[/]")
+                    if checkpoint is None:
+                        self.console.print("  (未启用)")
+                    else:
+                        self.console.print(f"  enabled:    True")
+                except Exception as e:
+                    self.console.print(f"[red]获取 inspect 信息失败: {e}[/red]")
+            else:
+                self.console.print("[yellow]inspect 功能未启用[/yellow]")
             return True
 
         return False

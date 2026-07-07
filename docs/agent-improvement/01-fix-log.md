@@ -61,6 +61,30 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 3.1 Task 2
+
+### Fix 1：Run / Session / Workspace Inspect CLI
+
+新增：
+- `tests/test_cli_session_commands.py`
+
+修改：
+- `src/agent/core/loop.py`：增加 get_session_summary、list_recent_sessions、get_run_summary、get_workspace_summary、get_checkpoint_summary、get_inspect_summary
+- `src/agent/cli/app.py`：增加 on_session、on_sessions、on_inspect 参数和 /session、/sessions、/inspect 命令
+- `src/agent/main.py`：create_agent_app 注册回调
+
+内容：
+- Loop 增加只读摘要接口：get_session_summary、list_recent_sessions、get_run_summary、get_workspace_summary、get_checkpoint_summary、get_inspect_summary
+- CLI 命令：/session 显示当前 session 信息，/sessions 列出最近 sessions，/inspect 显示 run/session/workspace/checkpoint 摘要
+- 没有 session 或 checkpoint 时不崩，给清晰提示
+- 命令不触发真实模型请求
+
+结果：
+- /session 稳定显示当前 session/run/workspace 基本信息
+- /sessions 能列出最近会话摘要
+- /inspect 能看到当前 run/session/workspace/checkpoint 摘要
+- 测试基线从 1033 提升到 1045
+
 ## Phase 3.1 Task 4
 
 ### Fix 1：默认入口接线 + Autosave

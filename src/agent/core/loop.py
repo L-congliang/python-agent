@@ -978,6 +978,102 @@ class AgentLoop:
         """Session store"""
         return self._session_store
 
+    # ========== 摘要接口 ==========
+
+    def get_session_summary(self) -> dict[str, Any] | None:
+        """获取当前 session 摘要
+
+        Returns:
+            session 摘要字典，没有活动 session 时返回 None
+        """
+        if self._session_store is None or self._session_id is None:
+            return None
+
+        data = self._session_store.load(self._session_id)
+        if data is None:
+            return None
+
+        return {
+            "session_id": data.get("id"),
+            "created_at": data.get("created_at"),
+            "workspace_root": data.get("workspace_root"),
+            "message_count": len(data.get("messages", [])),
+        }
+
+    def list_recent_sessions(self, limit: int = 10) -> list[dict[str, Any]]:
+        """列出最近 sessions
+
+        Args:
+            limit: 最大返回数量
+
+        Returns:
+            session 摘要列表
+        """
+        if self._session_store is None:
+            return []
+
+        return self._session_store.list_sessions()[:limit]
+
+    def get_run_summary(self) -> dict[str, Any]:
+        """获取当前 run 摘要
+
+        Returns:
+            run 摘要字典
+        """
+        return {
+            "run_id": self._run_dir.name if self._run_dir else None,
+            "session_id": self._session_id,
+            "workspace_root": self._config.workspace_root,
+            "model": self._config.model,
+            "turn_count": self._turn_count,
+            "tool_call_count": self._tool_call_count,
+        }
+
+    def get_workspace_summary(self) -> dict[str, Any]:
+        """获取 workspace 摘要
+
+        Returns:
+            workspace 摘要字典
+        """
+        if self._workspace_snapshot is None:
+            return {"workspace_root": self._config.workspace_root}
+
+        info = self._workspace_snapshot.capture()
+        return {
+            "workspace_root": info.get("workspace_root"),
+            "git_branch": info.get("git_branch"),
+            "recent_commits_count": len(info.get("recent_commits", [])),
+            "has_readme": "README.md" in info.get("project_docs", {}),
+            "has_pyproject": "pyproject.toml" in info.get("project_docs", {}),
+        }
+
+    def get_checkpoint_summary(self) -> dict[str, Any] | None:
+        """获取 checkpoint 摘要
+
+        Returns:
+            checkpoint 摘要字典，没有 checkpoint 时返回 None
+        """
+        if self._checkpoint_mgr is None:
+            return None
+
+        return {
+            "has_checkpoint": True,
+            "checkpoint_dir": str(self._checkpoint_mgr._checkpoint_dir),
+        }
+
+    def get_inspect_summary(self) -> dict[str, Any]:
+        """获取 inspect 摘要（run + session + workspace + checkpoint）
+
+        Returns:
+            inspect 摘要字典
+        """
+        return {
+            "run": self.get_run_summary(),
+            "session": self.get_session_summary(),
+            "workspace": self.get_workspace_summary(),
+            "checkpoint": self.get_checkpoint_summary(),
+        }
+
     @property
     def task_state(self) -> TaskState:
         """获取任务状态"""
