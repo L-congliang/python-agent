@@ -8,6 +8,17 @@
 
 `偏扎实的 Demo / 展示级，接近 Prototype 边缘`
 
+## Phase 3.1 复盘材料已沉淀
+
+Phase 3.1 的源码理解笔记已沉淀到：
+- `docs/agent-improvement/11-phase3.1-source-review.md`
+
+包含：
+- Phase 3.1 目标
+- 源码阅读顺序
+- 5 个关键问题与答案
+- 面试可讲口径
+
 不是：
 
 - 生产级 Claude Code 替代品
