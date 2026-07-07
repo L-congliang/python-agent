@@ -38,6 +38,7 @@
 - **统一截断逻辑**：bash/read/grep/glob/edit 的长输出统一处理
 - **CLI 截断提示**：用户能看到"输出已截断，完整结果在 xxx"
 - **Backup / Rollback / Edit History**：write/edit 前备份，支持 /history 和 /rollback latest
+- **Session 级 Permission Policy**：减少重复 ASK，支持 allow-once / allow-session
 - 中文文档包，适合 demo、复习和面试准备
 
 ## 架构概览

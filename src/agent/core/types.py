@@ -45,6 +45,18 @@ class PermissionConfirmationOutcome(Enum):
 
 
 @dataclass
+class PermissionConfirmationResult:
+    """权限确认结果（带作用域）
+
+    Attributes:
+        outcome: 确认结果
+        scope: 作用域（once 或 session），只在 APPROVED 时有效
+    """
+    outcome: PermissionConfirmationOutcome
+    scope: str = "once"  # "once" 或 "session"
+
+
+@dataclass
 class PermissionDecision:
     """权限决策结果
 

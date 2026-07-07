@@ -132,6 +132,20 @@ A：
 
 这个设计让文件修改不再只是"尽量安全"，而是"出了问题能回退，改动有记录"。
 
+## Q：你怎么处理权限确认的重复问题？
+
+A：
+
+我实现了 Session 级 Permission Policy，核心是减少重复 ASK：
+
+1. **allow-once**：只允许当前这一次操作
+2. **allow-session**：本 session 内允许相同操作
+3. **匹配粒度**：bash 按精确 command，write/edit 按规范化路径
+4. **CLI 交互**：y=本次允许，a=本 session 允许，n/Enter=拒绝
+5. **安全边界**：DENY 不被 session allow 绕过，/reset 清空 session policy
+
+这个设计让权限系统更像真实 agent，而不是每次都机械弹确认。
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：

@@ -61,6 +61,32 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 2.3B
+
+### Fix 1：Session 级 Permission Policy
+
+新增：
+- `src/agent/permissions/session_policy.py`
+- `tests/test_permission_session_policy.py`
+
+修改：
+- `src/agent/core/types.py`：新增 PermissionConfirmationResult 数据结构
+- `src/agent/core/loop.py`：接入 session policy 查询，确认后记录 allow-once/allow-session，reset 时清空
+- `src/agent/cli/app.py`：CLI 确认支持 y/a/n/Enter
+
+内容：
+- session_policy.py：内存态 store，支持 allow-once / allow-session
+- bash 按精确 command 匹配，write/edit 按规范化路径匹配
+- CLI 交互：y=本次允许，a=本 session 允许，n/Enter=拒绝
+- DENY 不被 session allow 绕过
+- /reset 清空 session policy
+
+结果：
+- 第一次高风险操作会询问
+- 选择 a 后，相同命令/相同文件不再询问
+- 选择 y 后，只当前一次放行
+- 测试基线从 971 提升到 994
+
 ## Phase 2.3A
 
 ### Fix 1：Backup / Rollback / Edit History

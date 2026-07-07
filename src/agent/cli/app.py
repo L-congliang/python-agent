@@ -125,6 +125,7 @@ class AgentApp:
         self.model = model
         self.version = version
         self._stream_buffer: str = ""
+        self._last_confirmation_scope: str = "once"  # 用于传递 allow-once / allow-session
         encoding = getattr(self.console.file, "encoding", None)
         self._use_ascii_ui = not _supports_text(LOGO, encoding)
         self._prompt_symbol = ">" if self._use_ascii_ui else "❯"
@@ -385,10 +386,14 @@ class AgentApp:
         self.console.print(panel)
 
         answer = self.console.input(
-            f"[yellow]是否允许执行？[/yellow] [{BRAND_COLOR}]y[/] / [red]N[/] (默认 N): "
+            f"[yellow]是否允许执行？[/yellow] [{BRAND_COLOR}]y[/] / [{BRAND_COLOR}]a[/]llow session / [red]N[/] (默认 N): "
         ).strip().lower()
 
         if answer in {"y", "yes"}:
+            return PermissionConfirmationOutcome.APPROVED
+        if answer in {"a", "allow"}:
+            # 返回 APPROVED，但通过 _last_confirmation_scope 传递 scope
+            self._last_confirmation_scope = "session"
             return PermissionConfirmationOutcome.APPROVED
         return PermissionConfirmationOutcome.DENIED
 

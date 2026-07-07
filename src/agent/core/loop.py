@@ -120,6 +120,9 @@ class LoopConfig:
     # 记忆系统配置
     memory_enabled: bool = True  # 是否启用记忆系统（用于 memory_on/off 对照实验）
 
+    # Session Policy 配置
+    enable_session_policy: bool = True  # 是否启用 session 级权限策略
+
 
 class AgentLoop:
     """Agent 主循环
@@ -208,6 +211,12 @@ class AgentLoop:
         if self._config.edit_history_dir:
             from agent.persistence.edit_history_store import EditHistoryStore
             self._edit_history_store = EditHistoryStore(self._config.edit_history_dir)
+
+        # Session Policy（延迟导入，避免循环依赖）
+        self._session_policy: Any = None
+        if self._config.enable_session_policy:
+            from agent.permissions.session_policy import SessionPermissionPolicy
+            self._session_policy = SessionPermissionPolicy()
         self._checkpoint_mgr: CheckpointManager | None = None
         self._workspace_snapshot: WorkspaceSnapshot | None = None
 
@@ -804,6 +813,9 @@ class AgentLoop:
         self._task_state = TaskState()
         self._repeat_detector.reset()
         self._retry_limiter.reset()
+        # 清空 session policy
+        if self._session_policy is not None:
+            self._session_policy.clear()
         logger.info("Agent loop reset")
 
     @property
@@ -1283,9 +1295,28 @@ class AgentLoop:
                         self._config.on_tool_result(tool_call, result)
                     continue
 
+                # Session Policy：查询是否命中 session allow
+                session_allowed = False
+                if self._session_policy is not None:
+                    from agent.permissions.session_policy import extract_permission_key
+                    key = extract_permission_key(
+                        tool_call.name,
+                        tool_call.arguments,
+                        context.cwd,
+                    )
+                    if key is not None:
+                        session_allowed = self._session_policy.is_allowed(
+                            tool_call.name, key
+                        )
+
                 perm_decision = self._permission_checker.check(
                     tool, tool_call.arguments, context
                 )
+
+                # 如果命中 session allow，跳过 ASK
+                if session_allowed and perm_decision.behavior == PermissionBehavior.ASK:
+                    perm_decision = PermissionDecision.allow()
+
                 if perm_decision.behavior == PermissionBehavior.DENY:
                     logger.warning("Permission denied: %s - %s", tool_call.name, perm_decision.message)
                     result = ToolResult(
@@ -1358,6 +1389,28 @@ class AgentLoop:
                         if self._config.on_tool_result:
                             self._config.on_tool_result(tool_call, result)
                         continue
+
+                    # Session Policy：记录 allow-once / allow-session
+                    if self._session_policy is not None:
+                        from agent.permissions.session_policy import extract_permission_key
+                        key = extract_permission_key(
+                            tool_call.name,
+                            tool_call.arguments,
+                            context.cwd,
+                        )
+                        if key is not None:
+                            # 从 CLI 获取 scope（通过 _last_confirmation_scope 属性）
+                            scope = "once"
+                            if hasattr(self._config.permission_handler, "__self__"):
+                                cli_app = self._config.permission_handler.__self__
+                                if hasattr(cli_app, "_last_confirmation_scope"):
+                                    scope = cli_app._last_confirmation_scope
+                                    # 重置为 once，避免影响下次
+                                    cli_app._last_confirmation_scope = "once"
+
+                            self._session_policy.remember_allow(
+                                tool_call.name, key, scope
+                            )
 
                     confirmation_note = f"[已确认执行] 用户已确认执行工具 '{tool_call.name}'。"
 
