@@ -101,6 +101,8 @@ class AgentApp:
         on_message: Callable[[str], Iterator[StreamEvent]],
         on_compact: Callable[[], tuple[int, int]] | None = None,
         on_reset: Callable[[], None] | None = None,
+        on_rollback: Callable[[], tuple[bool, str]] | None = None,
+        on_history: Callable[[], list[Any]] | None = None,
         model: str = "mimo-v2.5-pro",
         version: str = "0.1.0",
     ) -> None:
@@ -109,6 +111,8 @@ class AgentApp:
         Args:
             on_message: 用户输入消息后的回调，返回事件流
             on_compact: 压缩命令的回调，返回 (压缩前消息数, 压缩后消息数)
+            on_rollback: 回退命令的回调，返回 (success, message)
+            on_history: 历史命令的回调，返回历史记录列表
             model: 模型名称
             version: 版本号
         """
@@ -116,6 +120,8 @@ class AgentApp:
         self.on_message = on_message
         self.on_compact = on_compact
         self.on_reset = on_reset
+        self.on_rollback = on_rollback
+        self.on_history = on_history
         self.model = model
         self.version = version
         self._stream_buffer: str = ""
@@ -440,12 +446,14 @@ class AgentApp:
         if cmd == "/help":
             self.console.print(f"""
 [bold {BRAND_COLOR}]可用命令:[/]
-  /help    - 显示此帮助
-  /clear   - 清屏
-  /reset   - 重置对话历史
-  /compact - 压缩上下文历史
-  /exit    - 退出程序
-  /quit    - 退出程序
+  /help      - 显示此帮助
+  /clear     - 清屏
+  /reset     - 重置对话历史
+  /compact   - 压缩上下文历史
+  /history   - 显示编辑历史
+  /rollback  - 回退最近一次修改
+  /exit      - 退出程序
+  /quit      - 退出程序
 
 [{INACTIVE_GRAY}]快捷键:[/]
   Ctrl+C  - 取消当前输入
@@ -475,6 +483,39 @@ class AgentApp:
                     self.console.print(f"[red]压缩失败: {e}[/red]")
             else:
                 self.console.print("[yellow]压缩功能未启用[/yellow]")
+            return True
+
+        if cmd == "/history":
+            if self.on_history:
+                try:
+                    records = self.on_history()
+                    if not records:
+                        self.console.print("[yellow]没有编辑历史[/yellow]")
+                    else:
+                        self.console.print(f"[bold {BRAND_COLOR}]编辑历史:[/]")
+                        for i, record in enumerate(records[-10:], 1):  # 只显示最近 10 条
+                            action = record.action
+                            tool = record.tool_name
+                            path = os.path.basename(record.file_path)
+                            self.console.print(f"  {i}. [{action}] {tool} {path}")
+                except Exception as e:
+                    self.console.print(f"[red]获取历史失败: {e}[/red]")
+            else:
+                self.console.print("[yellow]历史功能未启用[/yellow]")
+            return True
+
+        if cmd.startswith("/rollback"):
+            if self.on_rollback:
+                try:
+                    success, msg = self.on_rollback()
+                    if success:
+                        self.console.print(f"[green]{msg}[/green]")
+                    else:
+                        self.console.print(f"[yellow]{msg}[/yellow]")
+                except Exception as e:
+                    self.console.print(f"[red]回退失败: {e}[/red]")
+            else:
+                self.console.print("[yellow]回退功能未启用[/yellow]")
             return True
 
         return False

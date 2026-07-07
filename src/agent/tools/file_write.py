@@ -133,6 +133,11 @@ FILE_WRITE_PARAMETERS = {
             "type": "string",
             "description": "要写入的文件内容（纯文本，不带行号）",
         },
+        "overwrite": {
+            "type": "boolean",
+            "description": "是否允许覆盖已有文件，默认 false",
+            "default": False,
+        },
     },
     "required": ["file_path", "content"],
 }
@@ -166,6 +171,10 @@ def validate_file_write_input(raw_input: dict[str, Any], context: ToolUseContext
     content = raw_input.get("content")
     if content is None or not isinstance(content, str):
         return ValidationResult.failure("content 不能为空")
+
+    overwrite = raw_input.get("overwrite", False)
+    if not isinstance(overwrite, bool):
+        return ValidationResult.failure("overwrite 必须是布尔值")
 
     # 检查路径是否是目录
     abs_path = _resolve_path(file_path, context.cwd)
@@ -272,6 +281,7 @@ def execute_file_write(input: dict[str, Any], context: ToolUseContext) -> ToolRe
         # 1. 解析参数（校验已通过，此处做类型断言）
         file_path: str = input["file_path"]
         content: str = input["content"]
+        overwrite: bool = input.get("overwrite", False)
 
         # 2. 解析路径
         abs_path = _resolve_path(file_path, context.cwd)
@@ -280,6 +290,16 @@ def execute_file_write(input: dict[str, Any], context: ToolUseContext) -> ToolRe
         if os.path.isdir(abs_path):
             return ToolResult(
                 output=f"路径是目录，不是文件: {abs_path}", is_error=True
+            )
+
+        existing_file = os.path.exists(abs_path)
+        if existing_file and not overwrite:
+            return ToolResult(
+                output=(
+                    f"文件已存在，默认不会覆盖: {abs_path}\n"
+                    "如果确实需要覆盖，请显式传入 overwrite=true。"
+                ),
+                is_error=True,
             )
 
         # 3. 检查中断
@@ -299,16 +319,28 @@ def execute_file_write(input: dict[str, Any], context: ToolUseContext) -> ToolRe
         # 6. 自动创建目录
         _ensure_directory(abs_path)
 
-        # 7. 写入文件
+        # 7. 写入文件前：记录历史（如果启用了 edit_history_store）
+        if context.edit_history_store is not None:
+            is_new = not existing_file
+            context.edit_history_store.record_write(
+                file_path=abs_path,
+                content=content,
+                is_new=is_new,
+                preview=f"write {abs_path}",
+            )
+
+        # 8. 写入文件
         if abs_path.endswith(".ipynb"):
             _write_notebook(abs_path, content)
         else:
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        # 8. 更新缓存
+        # 9. 更新缓存
         _update_cache(abs_path, content, context)
 
+        if existing_file and overwrite:
+            return ToolResult(output="覆盖写入成功", is_error=False)
         return ToolResult(output="写入成功", is_error=False)
 
     except ValueError as e:
@@ -325,11 +357,12 @@ def execute_file_write(input: dict[str, Any], context: ToolUseContext) -> ToolRe
 
 file_write_tool = build_tool(
     name="write",
-    description="写入文件内容。仅用于创建新文件，修改已有文件请用 edit。",
+    description="写入文件内容。默认仅创建新文件；若目标已存在，需显式传入 overwrite=true 才会覆盖。修改已有文件优先用 edit。",
     parameters=FILE_WRITE_PARAMETERS,
     execute_fn=execute_file_write,
     is_read_only=lambda input: False,       # 写操作
     is_concurrency_safe=lambda input: False, # 不并发安全
+    is_destructive=lambda input: bool(input.get("overwrite", False)),
     validate_input=validate_file_write_input,
     get_summary=lambda input: f"Writing {input.get('file_path', '')}",
     get_user_facing_name=lambda input: "Write",

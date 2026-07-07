@@ -41,11 +41,14 @@ def create_agent_loop(
     workspace_root: str | None = None,
     registry: ToolRegistry | None = None,
     artifact_dir: str | None = None,
+    edit_history_dir: str | None = None,
 ) -> AgentLoop:
     """创建默认 AgentLoop。"""
     resolved_workspace_root = workspace_root or os.getcwd()
     # 默认 artifact 目录：workspace/.artifacts
     resolved_artifact_dir = artifact_dir or os.path.join(resolved_workspace_root, ".artifacts")
+    # 默认 edit history 目录：workspace/.agent/file-history
+    resolved_edit_history_dir = edit_history_dir or os.path.join(resolved_workspace_root, ".agent", "file-history")
     return AgentLoop(
         client,
         registry or create_default_registry(),
@@ -53,6 +56,7 @@ def create_agent_loop(
             model=model,
             workspace_root=resolved_workspace_root,
             artifact_dir=resolved_artifact_dir,
+            edit_history_dir=resolved_edit_history_dir,
         ),
     )
 
@@ -108,10 +112,25 @@ def create_message_handler(loop: AgentLoop) -> Callable[[str], Iterator[StreamEv
 
 def create_agent_app(loop: AgentLoop, *, model: str) -> AgentApp:
     """创建默认 CLI app，并接好 loop 回调。"""
+    # 创建 rollback 和 history 回调
+    def _on_rollback() -> tuple[bool, str]:
+        """回退最近一次修改"""
+        if loop._edit_history_store is None:
+            return False, "历史记录功能未启用"
+        return loop._edit_history_store.rollback_latest()
+
+    def _on_history() -> list:
+        """获取编辑历史"""
+        if loop._edit_history_store is None:
+            return []
+        return loop._edit_history_store.get_all()
+
     app = AgentApp(
         on_message=create_message_handler(loop),
         on_compact=loop.compact,
         on_reset=loop.reset,
+        on_rollback=_on_rollback,
+        on_history=_on_history,
         model=model,
     )
     loop.set_permission_handler(app.confirm_permission)

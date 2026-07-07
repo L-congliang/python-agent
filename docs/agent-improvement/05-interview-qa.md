@@ -117,6 +117,21 @@ A：
 
 因为完整输出可能很长（几千行），直接显示会刷屏。CLI 只显示 preview，但会提示"完整结果已保存到 xxx"。用户如果需要完整结果，可以自己去查看 artifact 文件。
 
+## Q：你怎么处理文件编辑的回退问题？
+
+A：
+
+我实现了 Backup / Rollback / Edit History 机制：
+
+1. **写前备份**：write/edit 操作前自动创建备份文件
+2. **历史记录**：记录每次操作的 tool_name、file_path、action（created/modified）、backup_path、before_hash、after_hash、preview
+3. **回退支持**：rollback latest 可以回退最近一次修改
+   - created：删除新建的文件
+   - modified：从备份恢复原内容
+4. **CLI 命令**：/history 显示最近 10 条历史，/rollback latest 回退最近一次修改
+
+这个设计让文件修改不再只是"尽量安全"，而是"出了问题能回退，改动有记录"。
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：

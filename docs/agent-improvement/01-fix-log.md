@@ -61,6 +61,37 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 2.3A
+
+### Fix 1：Backup / Rollback / Edit History
+
+新增：
+- `src/agent/persistence/edit_history_store.py`
+- `tests/test_edit_history_store.py`
+- `tests/test_rollback_flow.py`
+
+修改：
+- `src/agent/core/context.py`：ToolUseContext 增加 edit_history_store 字段
+- `src/agent/core/loop.py`：LoopConfig 增加 edit_history_dir，创建 context 时注入 store
+- `src/agent/main.py`：create_agent_loop 设置默认 edit_history_dir，create_agent_app 注册 rollback/history 回调
+- `src/agent/tools/file_write.py`：写入前记录历史，成功后创建 backup
+- `src/agent/tools/file_edit.py`：编辑前记录历史，成功后创建 backup
+- `src/agent/cli/app.py`：新增 /history 和 /rollback 命令
+
+内容：
+- edit_history_store.py：最小持久化存储，支持 record_write/record_edit/record_rollback/get_latest/rollback_latest
+- 新建文件记录为 created，修改文件记录为 modified
+- rollback latest：created 删除文件，modified 恢复备份
+- CLI 命令：/history 显示最近 10 条历史，/rollback latest 回退最近一次修改
+- 默认历史目录：workspace/.agent/file-history
+
+结果：
+- write/edit 的成功修改都可追溯
+- 至少支持回退最近一次成功修改
+- 新建文件和修改已有文件都能正确回退
+- CLI 可演示 /history 和 /rollback latest
+- 测试基线从 943 提升到 979
+
 ## Phase 2.2
 
 ### Fix 1：统一 Observation Budget 契约

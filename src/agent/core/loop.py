@@ -111,6 +111,9 @@ class LoopConfig:
     # Observation Budget：artifact 保存目录
     artifact_dir: str | None = None  # None 表示不保存 artifact
 
+    # Edit History：编辑历史目录
+    edit_history_dir: str | None = None  # None 表示不记录历史
+
     # 多 Agent 配置
     enable_subagent: bool = True  # 是否启用 SubAgentTool
 
@@ -199,6 +202,12 @@ class AgentLoop:
         self._run_dir: Path | None = None
         self._trace: TraceEmitter | None = None
         self._reporter: RunReporter | None = None
+
+        # Edit History 存储（延迟导入，避免循环依赖）
+        self._edit_history_store: Any = None
+        if self._config.edit_history_dir:
+            from agent.persistence.edit_history_store import EditHistoryStore
+            self._edit_history_store = EditHistoryStore(self._config.edit_history_dir)
         self._checkpoint_mgr: CheckpointManager | None = None
         self._workspace_snapshot: WorkspaceSnapshot | None = None
 
@@ -1191,6 +1200,7 @@ class AgentLoop:
             cwd=self._config.workspace_root or ".",
             agent_loop=self,
             artifact_dir=self._config.artifact_dir,
+            edit_history_store=self._edit_history_store,
         )
 
         results = []

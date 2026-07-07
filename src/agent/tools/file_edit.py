@@ -264,10 +264,19 @@ def execute_file_edit(input: dict[str, Any], context: ToolUseContext) -> ToolRes
                 is_error=False,
             )
 
-        # 9. 原子写入，确保失败时不会留下半截文件
+        # 9. 写入前：记录历史（如果启用了 edit_history_store）
+        if context.edit_history_store is not None:
+            context.edit_history_store.record_edit(
+                file_path=abs_path,
+                old_content=content,
+                new_content=new_content,
+                diff_preview=diff_text,
+            )
+
+        # 10. 原子写入，确保失败时不会留下半截文件
         _atomic_write_text(abs_path, new_content)
 
-        # 10. 更新缓存
+        # 11. 更新缓存
         _update_cache(abs_path, new_content, context)
 
         # 构建输出

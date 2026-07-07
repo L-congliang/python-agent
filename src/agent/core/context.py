@@ -118,3 +118,6 @@ class ToolUseContext:
 
     # Observation Budget：artifact 保存目录
     artifact_dir: str | None = None
+
+    # Edit History：编辑历史存储
+    edit_history_store: Any = None  # EditHistoryStore，用 Any 避免循环导入
