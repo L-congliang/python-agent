@@ -146,6 +146,20 @@ A：
 
 这个设计让权限系统更像真实 agent，而不是每次都机械弹确认。
 
+## Q：你怎么验证真实远程链路没断？
+
+A：
+
+我实现了真实远程 LLM Smoke 回归，核心是环境门控 + 收敛 prompt：
+
+1. **环境门控**：RUN_REAL_LLM_SMOKE=1，MIMO_API_KEY 缺失时自动 skip
+2. **client smoke**：验证配置读取、client 初始化、远程 API 可达、基本响应格式
+3. **agent loop smoke**：验证默认装配路径、tool use -> observation -> final answer
+4. **收敛 prompt**：client 用"reply with exactly OK"，agent loop 用"read hello.txt"
+5. **错误区分**：网络/API 异常时，报错能区分是远程问题，不伪装成本地逻辑回归
+
+这个设计让测试既能证明"链路没断"，又不会因为模型随机性而过脆。
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：

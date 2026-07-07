@@ -39,6 +39,7 @@
 - **CLI 截断提示**：用户能看到"输出已截断，完整结果在 xxx"
 - **Backup / Rollback / Edit History**：write/edit 前备份，支持 /history 和 /rollback latest
 - **Session 级 Permission Policy**：减少重复 ASK，支持 allow-once / allow-session
+- **真实远程 LLM Smoke**：验证真实 API 链路没断（需 RUN_REAL_LLM_SMOKE=1 + MIMO_API_KEY）
 - 中文文档包，适合 demo、复习和面试准备
 
 ## 架构概览

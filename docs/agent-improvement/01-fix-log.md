@@ -61,6 +61,26 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 2.3C
+
+### Fix 1：真实远程 LLM Smoke 回归
+
+新增：
+- `tests/test_real_llm_smoke.py`
+
+内容：
+- 环境门控：RUN_REAL_LLM_SMOKE=1，MIMO_API_KEY 缺失时自动 skip
+- client smoke：验证配置读取、client 初始化、远程 API 可达、基本响应格式
+- agent loop smoke：验证默认装配路径、tool use -> observation -> final answer
+- 收敛 prompt：client 用"reply with exactly OK"，agent loop 用"read hello.txt"
+- 网络/API 异常时，报错能区分是远程问题，不伪装成本地逻辑回归
+
+结果：
+- 默认 pytest tests -q 不依赖真实 API
+- 开启 env 后，真实 client smoke 能跑
+- 开启 env 后，最小 agent loop smoke 能跑
+- 测试基线从 994 提升到 997
+
 ## Phase 2.3B
 
 ### Fix 1：Session 级 Permission Policy
