@@ -604,6 +604,17 @@ class AgentApp:
                         self.console.print("  (未启用)")
                     else:
                         self.console.print(f"  enabled:    True")
+
+                    # Freshness 信息
+                    freshness = summary.get("freshness")
+                    self.console.print(f"[bold {BRAND_COLOR}]Freshness:[/]")
+                    if freshness is None:
+                        self.console.print("  (无 freshness 信息)")
+                    else:
+                        status = freshness.get("resume_status", "unknown")
+                        message = freshness.get("message", "")
+                        self.console.print(f"  status:     {status}")
+                        self.console.print(f"  message:    {message}")
                 except Exception as e:
                     self.console.print(f"[red]获取 inspect 信息失败: {e}[/red]")
             else:

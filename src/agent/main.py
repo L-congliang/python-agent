@@ -220,6 +220,55 @@ def _handle_resume(loop: AgentLoop, resume_arg: str) -> None:
     loop.import_session_state(session_data)
     print(f"已恢复 session: {session_data.get('id', 'unknown')}")
 
+    # Freshness 判定
+    _check_resume_freshness(loop, session_data)
+
+
+def _check_resume_freshness(loop: AgentLoop, session_data: dict) -> None:
+    """检查 resume 的 freshness 状态
+
+    Args:
+        loop: AgentLoop 实例
+        session_data: session 数据
+    """
+    # 尝试加载 checkpoint
+    checkpoint_mgr = loop._checkpoint_mgr
+    if checkpoint_mgr is None:
+        loop.set_resume_freshness_summary({
+            "resume_status": "unavailable",
+            "message": "checkpoint 未启用，无法校验 freshness",
+        })
+        print("[gray]checkpoint 未启用，无法校验 freshness[/gray]")
+        return
+
+    # 尝试加载最新 checkpoint
+    checkpoint = checkpoint_mgr.load_latest()
+    if checkpoint is None:
+        loop.set_resume_freshness_summary({
+            "resume_status": "unavailable",
+            "message": "没有 checkpoint，无法校验 freshness",
+        })
+        print("[gray]没有 checkpoint，无法校验 freshness[/gray]")
+        return
+
+    # 检测 freshness
+    result = checkpoint_mgr.check_freshness(checkpoint)
+    loop.set_resume_freshness_summary({
+        "resume_status": result.resume_status,
+        "message": result.message,
+        "file_statuses": result.file_statuses,
+    })
+
+    # 打印提示
+    if result.resume_status == "full-valid":
+        print(f"[green]{result.message}[/green]")
+    elif result.resume_status == "partial-stale":
+        print(f"[yellow]警告：{result.message}[/yellow]")
+    elif result.resume_status == "invalid":
+        print(f"[red]警告：{result.message}[/red]")
+    else:
+        print(f"[gray]{result.message}[/gray]")
+
 
 if __name__ == "__main__":
     main()

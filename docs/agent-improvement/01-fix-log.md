@@ -61,6 +61,31 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 3.1 Task 3
+
+### Fix 1：Freshness-aware Resume
+
+新增：
+- `tests/test_resume_freshness.py`
+
+修改：
+- `src/agent/core/loop.py`：export_session_state 增加 last_run_id，增加 _resume_freshness_summary、set_resume_freshness_summary、get_resume_freshness_summary，get_inspect_summary 增加 freshness
+- `src/agent/main.py`：_handle_resume 增加 freshness 判定，_check_resume_freshness 函数
+- `src/agent/cli/app.py`：/inspect 显示 freshness 状态
+
+内容：
+- resume 时计算 checkpoint freshness
+- 四类状态：full-valid、partial-stale、invalid、unavailable
+- main.py --resume ... 给出清晰状态提示（绿色/黄色/红色/灰色）
+- /inspect 能看到 freshness 状态
+- 没有 checkpoint 时不崩，显示 unavailable
+
+结果：
+- resume 时能计算并展示 freshness
+- full-valid / partial-stale / invalid / unavailable 四类状态清晰可见
+- /inspect 能看到 freshness 状态
+- 测试基线从 1045 提升到 1061
+
 ## Phase 3.1 Task 2
 
 ### Fix 1：Run / Session / Workspace Inspect CLI

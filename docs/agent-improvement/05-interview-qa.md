@@ -230,6 +230,31 @@ A：
 
 这个设计让用户能一眼看出"当前跑的是哪个 session、哪个 run、在哪个 workspace"。
 
+## Q：你怎么让 resume 不是"盲目接着跑"？
+
+A：
+
+我实现了 Freshness-aware Resume，让 resume 能在恢复前判断并展示当前状态：
+
+1. **四类状态**：
+   - full-valid：所有关联文件未变，可以正常恢复
+   - partial-stale：部分文件已变更，允许恢复但明确警告
+   - invalid：核心文件删除/严重不一致，不静默恢复
+   - unavailable：没有 checkpoint，无法判断 freshness
+
+2. **检测流程**：
+   - resume 时加载 session
+   - 取出 last_run_id
+   - 查 checkpoint
+   - 计算 freshness
+   - 打印提示（绿色/黄色/红色/灰色）
+
+3. **CLI 展示**：
+   - /inspect 能看到 freshness 状态
+   - 状态和消息清晰可见
+
+这个设计让 resume 不再是"盲目接着跑"，而是能告诉用户当前恢复状态。
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：

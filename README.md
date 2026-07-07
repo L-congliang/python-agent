@@ -43,6 +43,7 @@
 - **Session 持久化与恢复**：--resume latest / --resume <session_id>
 - **Session Autosave**：默认入口自动保存，/reset 后新旧 session 分离
 - **Inspect CLI**：/session、/sessions、/inspect 查看当前状态
+- **Freshness-aware Resume**：resume 时检测 checkpoint freshness，四类状态清晰可见
 - 中文文档包，适合 demo、复习和面试准备
 
 ## 架构概览

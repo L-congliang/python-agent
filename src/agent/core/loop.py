@@ -223,6 +223,9 @@ class AgentLoop:
             from agent.persistence.session_store import SessionStore
             self._session_store = SessionStore(Path(self._config.session_dir))
 
+        # Resume freshness 状态
+        self._resume_freshness_summary: dict[str, Any] | None = None
+
         # Session Policy（延迟导入，避免循环依赖）
         self._session_policy: Any = None
         if self._config.enable_session_policy:
@@ -926,6 +929,7 @@ class AgentLoop:
             "total_tokens": self._total_tokens,
             "memory": self._memory.export_state() if hasattr(self._memory, 'export_state') else {},
             "workspace_root": self._config.workspace_root,
+            "last_run_id": self._run_dir.name if self._run_dir else None,
         }
 
     def import_session_state(self, state: dict[str, Any]) -> None:
@@ -1062,7 +1066,7 @@ class AgentLoop:
         }
 
     def get_inspect_summary(self) -> dict[str, Any]:
-        """获取 inspect 摘要（run + session + workspace + checkpoint）
+        """获取 inspect 摘要（run + session + workspace + checkpoint + freshness）
 
         Returns:
             inspect 摘要字典
@@ -1072,7 +1076,24 @@ class AgentLoop:
             "session": self.get_session_summary(),
             "workspace": self.get_workspace_summary(),
             "checkpoint": self.get_checkpoint_summary(),
+            "freshness": self._resume_freshness_summary,
         }
+
+    def set_resume_freshness_summary(self, summary: dict[str, Any] | None) -> None:
+        """设置 resume freshness 摘要
+
+        Args:
+            summary: freshness 摘要字典
+        """
+        self._resume_freshness_summary = summary
+
+    def get_resume_freshness_summary(self) -> dict[str, Any] | None:
+        """获取 resume freshness 摘要
+
+        Returns:
+            freshness 摘要字典，没有时返回 None
+        """
+        return self._resume_freshness_summary
 
     @property
     def task_state(self) -> TaskState:
