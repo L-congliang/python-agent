@@ -33,7 +33,10 @@ from agent.core.model import MimoClient
 from agent.core.model_adapter import ModelAdapter, ToolCall as AdapterToolCall
 from agent.core.types import (
     Message,
+    ObservationMetadata,
     PermissionBehavior,
+    PermissionConfirmationOutcome,
+    PermissionRequest,
     Role,
     ToolCall,
     ToolCallResult,
@@ -88,6 +91,8 @@ class LoopConfig:
 
     # 回调
     on_notify: Callable[[str], None] | None = None  # 通知回调
+    permission_handler: Callable[[PermissionRequest], PermissionConfirmationOutcome] | None = None
+    on_tool_result: Callable[[ToolCall, ToolResult], None] | None = None  # 工具执行完成回调
 
     # 调试
     debug: bool = False
@@ -102,6 +107,9 @@ class LoopConfig:
     enable_trace: bool = True  # 是否启用 trace
     enable_checkpoint: bool = True  # 是否启用 checkpoint
     checkpoint_interval: int = 1  # 每 N 个工具调用创建 checkpoint
+
+    # Observation Budget：artifact 保存目录
+    artifact_dir: str | None = None  # None 表示不保存 artifact
 
     # 多 Agent 配置
     enable_subagent: bool = True  # 是否启用 SubAgentTool
@@ -208,6 +216,13 @@ class AgentLoop:
 
         # 子 Agent 约束（只有子 Agent 才有）
         self._subagent_constraints: SubAgentConstraints | None = None
+
+    def set_permission_handler(
+        self,
+        handler: Callable[[PermissionRequest], PermissionConfirmationOutcome] | None,
+    ) -> None:
+        """注入权限确认处理器。"""
+        self._config.permission_handler = handler
 
     # ============================================================
     # 子 Agent 工厂方法
@@ -477,16 +492,7 @@ class AgentLoop:
             if self._trace:
                 self._trace.emit("workspace_snapshot", workspace_info)
 
-        # 检测规划意图，自动启用 Plan Mode
-        if self._detect_planning_intent(user_input):
-            self.enable_plan_mode()
-
-        # 检测确认/取消意图，自动禁用 Plan Mode
-        if self._config.plan_mode:
-            if self._detect_confirmation_intent(user_input):
-                self.disable_plan_mode()
-            elif self._detect_cancel_intent(user_input):
-                self.disable_plan_mode()
+        self._update_plan_mode_from_input(user_input)
 
         # 添加用户消息
         self._messages.append({"role": "user", "content": user_input})
@@ -664,6 +670,8 @@ class AgentLoop:
             self._memory.set_task(user_input)
 
         try:
+            self._update_plan_mode_from_input(user_input)
+
             # 添加用户消息
             self._messages.append({"role": "user", "content": user_input})
 
@@ -809,7 +817,7 @@ class AgentLoop:
         """当前累计的 token 数量"""
         return self._total_tokens
 
-    def compact(self) -> None:
+    def compact(self) -> tuple[int, int]:
         """手动触发上下文压缩
 
         压缩旧消息历史，保留最近的消息。
@@ -817,7 +825,7 @@ class AgentLoop:
         """
         if not self._messages:
             logger.info("Compact: no messages to compress")
-            return
+            return (0, 0)
 
         keep_tokens = int(self._config.context_window * 0.3)
         before_count = len(self._messages)
@@ -829,6 +837,7 @@ class AgentLoop:
 
         logger.info("Compact: %d messages -> %d messages", before_count, after_count)
         self._notify(f"[压缩] 消息历史已压缩: {before_count} -> {after_count} 条")
+        return (before_count, after_count)
 
     def abort(self) -> None:
         """中断当前执行"""
@@ -937,6 +946,17 @@ class AgentLoop:
         input_lower = user_input.lower()
         return any(keyword in input_lower for keyword in cancel_keywords)
 
+    def _update_plan_mode_from_input(self, user_input: str) -> None:
+        """统一处理用户输入触发的 Plan Mode 切换。"""
+        if self._detect_planning_intent(user_input):
+            self.enable_plan_mode()
+
+        if self._config.plan_mode:
+            if self._detect_confirmation_intent(user_input):
+                self.disable_plan_mode()
+            elif self._detect_cancel_intent(user_input):
+                self.disable_plan_mode()
+
     def _check_compaction(self) -> None:
         """检查是否需要自动压缩
 
@@ -946,6 +966,82 @@ class AgentLoop:
         if self._total_tokens >= threshold:
             logger.info("Token count (%d) reached threshold (%d), auto-compacting", self._total_tokens, threshold)
             self.compact()
+
+    def _build_permission_request(
+        self,
+        tool_call: ToolCall,
+        context: ToolUseContext,
+        message: str,
+    ) -> PermissionRequest:
+        """构造权限确认请求。"""
+        preview: str | None = None
+        if tool_call.name == "edit":
+            from agent.tools.file_edit import execute_file_edit
+
+            preview_input = dict(tool_call.arguments)
+            preview_input["preview"] = True
+            preview_result = execute_file_edit(preview_input, context)
+            if preview_result.is_error:
+                preview = f"无法生成 diff 预览: {preview_result.output}"
+            else:
+                preview = str(preview_result.output)
+
+        return PermissionRequest(
+            tool_name=tool_call.name,
+            tool_input=dict(tool_call.arguments),
+            message=message,
+            preview=preview,
+        )
+
+    def _build_permission_result_lines(
+        self,
+        request: PermissionRequest,
+        *,
+        header: str,
+        detail: str,
+    ) -> list[str]:
+        """构造权限相关 observation 文本。"""
+        parts = [header, detail]
+
+        if request.tool_name == "bash":
+            command = str(request.tool_input.get("command", "")).strip()
+            if command:
+                parts.append(f"待执行命令: {command}")
+        elif request.tool_name in ("write", "edit"):
+            file_path = str(request.tool_input.get("file_path", "")).strip()
+            if file_path:
+                parts.append(f"目标文件: {file_path}")
+
+        if request.preview:
+            parts.append(request.preview)
+
+        return parts
+
+    def _build_permission_ask_result(self, request: PermissionRequest) -> ToolResult:
+        """没有确认能力时，ASK 保持 fail-closed。"""
+        return ToolResult(
+            output="\n".join(
+                self._build_permission_result_lines(
+                    request,
+                    header=f"[需要确认] {request.message}",
+                    detail="当前环境未提供交互式确认能力，因此本次工具调用未执行。",
+                )
+            ),
+            is_error=True,
+        )
+
+    def _build_permission_rejected_result(self, request: PermissionRequest) -> ToolResult:
+        """用户拒绝后的 observation。"""
+        return ToolResult(
+            output="\n".join(
+                self._build_permission_result_lines(
+                    request,
+                    header=f"[用户拒绝] {request.message}",
+                    detail=f"用户拒绝执行工具 '{request.tool_name}'，本次调用未执行。",
+                )
+            ),
+            is_error=True,
+        )
 
     def _notify(self, message: str) -> None:
         """显示通知信息
@@ -1094,16 +1190,22 @@ class AgentLoop:
             verbose=self._config.verbose,
             cwd=self._config.workspace_root or ".",
             agent_loop=self,
+            artifact_dir=self._config.artifact_dir,
         )
 
         results = []
         for tool_call in tool_calls:
+            confirmation_note: str | None = None
             # 检查中断
             if self._abort_controller.is_aborted:
-                results.append(ToolResult(
+                result = ToolResult(
                     output="工具执行被取消",
                     is_error=True,
-                ))
+                )
+                results.append(result)
+                # 工具执行完成回调（中断路径）
+                if self._config.on_tool_result:
+                    self._config.on_tool_result(tool_call, result)
                 continue
 
             # 检查重复调用
@@ -1112,7 +1214,8 @@ class AgentLoop:
             )
             if is_repeated:
                 logger.warning("Repeated call detected: %s - %s", tool_call.name, repeat_msg)
-                results.append(ToolResult(output=repeat_msg, is_error=True))
+                result = ToolResult(output=repeat_msg, is_error=True)
+                results.append(result)
                 self._retry_limiter.record_failure()
                 # 记忆：记录重复调用，帮助下一轮 prompt 感知循环
                 if self._config.memory_enabled:
@@ -1134,44 +1237,149 @@ class AgentLoop:
                     "resolved_path": "",
                     "blocked_by_repeat_detector": True,
                 })
+                # 工具执行完成回调（重复调用路径）
+                if self._config.on_tool_result:
+                    self._config.on_tool_result(tool_call, result)
                 continue
 
-            # 检查路径逃逸（仅文件相关工具）
-            if tool_call.name in ("read", "write", "edit"):
+            # 检查路径逃逸（文件与搜索类工具）
+            if tool_call.name in ("read", "write", "edit", "grep", "glob"):
                 file_path = tool_call.arguments.get("file_path") or tool_call.arguments.get("path", "")
                 if file_path:
                     is_safe, path_msg = self._path_guard.check_path(file_path)
                     if not is_safe:
                         logger.warning("Path escape detected: %s", path_msg)
-                        results.append(ToolResult(output=path_msg, is_error=True))
+                        result = ToolResult(output=path_msg, is_error=True)
+                        results.append(result)
                         self._retry_limiter.record_failure()
+                        # 工具执行完成回调（路径逃逸路径）
+                        if self._config.on_tool_result:
+                            self._config.on_tool_result(tool_call, result)
                         continue
 
             # 权限检查（Plan Mode 下会拦截写操作）
             tool = self._registry.get(tool_call.name)
             if tool is not None:
+                validation = tool.validate_input(tool_call.arguments, context)
+                if not validation.is_valid:
+                    result = ToolResult(
+                        output=f"输入校验失败: {validation.message}",
+                        is_error=True,
+                    )
+                    results.append(result)
+                    self._retry_limiter.record_failure()
+                    # 工具执行完成回调（输入校验失败路径）
+                    if self._config.on_tool_result:
+                        self._config.on_tool_result(tool_call, result)
+                    continue
+
                 perm_decision = self._permission_checker.check(
                     tool, tool_call.arguments, context
                 )
                 if perm_decision.behavior == PermissionBehavior.DENY:
-                    logger.warning("Permission denied: %s - %s", tool_call.name, perm_decision.reason)
-                    results.append(ToolResult(
-                        output=f"[权限拒绝] {perm_decision.reason}",
+                    logger.warning("Permission denied: %s - %s", tool_call.name, perm_decision.message)
+                    result = ToolResult(
+                        output=f"[权限拒绝] {perm_decision.message}",
                         is_error=True,
-                    ))
+                    )
+                    results.append(result)
                     self._retry_limiter.record_failure()
+                    # 工具执行完成回调（权限拒绝路径）
+                    if self._config.on_tool_result:
+                        self._config.on_tool_result(tool_call, result)
                     continue
+                if perm_decision.behavior == PermissionBehavior.ASK:
+                    logger.warning("Permission requires confirmation: %s - %s", tool_call.name, perm_decision.message)
+                    request = self._build_permission_request(
+                        tool_call=tool_call,
+                        context=context,
+                        message=perm_decision.message,
+                    )
+                    if self._config.permission_handler is None:
+                        result = self._build_permission_ask_result(request)
+                        results.append(result)
+                        self._retry_limiter.record_failure()
+                        # 工具执行完成回调（无权限处理器路径）
+                        if self._config.on_tool_result:
+                            self._config.on_tool_result(tool_call, result)
+                        continue
+
+                    try:
+                        confirmation = self._config.permission_handler(request)
+                    except Exception as e:
+                        logger.warning("Permission handler failed: %s", e)
+                        unavailable_request = PermissionRequest(
+                            tool_name=request.tool_name,
+                            tool_input=request.tool_input,
+                            message=f"{request.message}（确认处理器异常: {e}）",
+                            preview=request.preview,
+                        )
+                        result = self._build_permission_ask_result(unavailable_request)
+                        results.append(result)
+                        self._retry_limiter.record_failure()
+                        # 工具执行完成回调（处理器异常路径）
+                        if self._config.on_tool_result:
+                            self._config.on_tool_result(tool_call, result)
+                        continue
+
+                    if confirmation == PermissionConfirmationOutcome.UNAVAILABLE:
+                        result = self._build_permission_ask_result(request)
+                        results.append(result)
+                        self._retry_limiter.record_failure()
+                        # 工具执行完成回调（不可用路径）
+                        if self._config.on_tool_result:
+                            self._config.on_tool_result(tool_call, result)
+                        continue
+
+                    if confirmation == PermissionConfirmationOutcome.DENIED:
+                        result = self._build_permission_rejected_result(request)
+                        results.append(result)
+                        self._retry_limiter.record_failure()
+                        # 工具执行完成回调（被拒绝路径）
+                        if self._config.on_tool_result:
+                            self._config.on_tool_result(tool_call, result)
+                        continue
+
+                    if confirmation != PermissionConfirmationOutcome.APPROVED:
+                        result = self._build_permission_ask_result(request)
+                        results.append(result)
+                        self._retry_limiter.record_failure()
+                        # 工具执行完成回调（未批准路径）
+                        if self._config.on_tool_result:
+                            self._config.on_tool_result(tool_call, result)
+                        continue
+
+                    confirmation_note = f"[已确认执行] 用户已确认执行工具 '{tool_call.name}'。"
+
+                final_arguments = (
+                    perm_decision.updated_input
+                    if perm_decision.updated_input is not None
+                    else tool_call.arguments
+                )
+            else:
+                final_arguments = tool_call.arguments
 
             # 执行工具
             logger.info("Executing tool: %s", tool_call.name)
             start_time = time.time()
             result = self._registry.validate_and_execute(
                 name=tool_call.name,
-                arguments=tool_call.arguments,
+                arguments=final_arguments,
                 context=context,
             )
+            if confirmation_note:
+                result = ToolResult(
+                    output=f"{confirmation_note}\n{result.output}",
+                    is_error=result.is_error,
+                    new_messages=result.new_messages,
+                    observation=result.observation,  # 保留 observation
+                )
             duration_ms = int((time.time() - start_time) * 1000)
             results.append(result)
+
+            # 工具执行完成回调
+            if self._config.on_tool_result:
+                self._config.on_tool_result(tool_call, result)
 
             # 记忆写入钩子
             if self._config.memory_enabled:
@@ -1272,16 +1480,28 @@ class AgentLoop:
             ]
         }
 
+        设计决策:
+        - 为什么优先使用 observation.preview？
+          长输出（grep/bash/read）如果全部回灌，会导致上下文膨胀。
+          使用 preview 让模型只看到截断后的预览，完整结果保存在 artifact。
+
+        - 为什么保留 output 兼容？
+          旧工具不传 observation，仍用 output 字段，行为不变。
+          新工具返回 observation 时，loop 优先使用 preview。
+
         Args:
             tool_calls: 工具调用列表
             results: 工具执行结果列表
         """
         tool_result_blocks = []
         for tool_call, result in zip(tool_calls, results):
+            # Observation Budget 契约：优先使用 preview，回退到 output
+            content = self._resolve_observation_content(result)
+
             block: dict[str, Any] = {
                 "type": "tool_result",
                 "tool_use_id": tool_call.id,
-                "content": str(result.output),
+                "content": content,
             }
             if result.is_error:
                 block["is_error"] = True
@@ -1291,6 +1511,38 @@ class AgentLoop:
             "role": "user",
             "content": tool_result_blocks,
         })
+
+    def _resolve_observation_content(self, result: ToolResult) -> str:
+        """解析 observation 内容，决定回灌到消息历史的内容
+
+        优先级：
+        1. 如果有 observation.preview，使用 preview（截断版本）
+        2. 否则使用 output（向后兼容）
+
+        Args:
+            result: 工具执行结果
+
+        Returns:
+            回灌到消息历史的文本内容
+        """
+        if result.observation is not None and result.observation.preview is not None:
+            # 有 observation 且有 preview，使用 preview
+            preview = result.observation.preview
+
+            # 如果有 artifact 路径，附加提示
+            if result.observation.artifact_path:
+                preview += f"\n\n[完整输出已保存到: {result.observation.artifact_path}]"
+
+            logger.debug(
+                "Using observation preview: %d chars (was_truncated=%s, full=%d chars)",
+                len(preview),
+                result.observation.was_truncated,
+                result.observation.full_output_chars,
+            )
+            return preview
+
+        # 向后兼容：没有 observation，使用 output
+        return str(result.output)
 
     # ========== 记忆写入钩子 ==========
 

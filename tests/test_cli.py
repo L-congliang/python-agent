@@ -7,7 +7,11 @@ import pytest
 from rich.console import Console
 
 from agent.cli.app import AgentApp, BRAND_COLOR
-from agent.core.types import StreamEvent
+from agent.core.types import (
+    PermissionConfirmationOutcome,
+    PermissionRequest,
+    StreamEvent,
+)
 
 
 def make_app(on_message=None) -> AgentApp:
@@ -192,6 +196,68 @@ class TestToolResultPanel:
             assert "50 more lines" in str(panel.renderable)
 
 
+class TestPermissionConfirmation:
+    """权限确认交互测试"""
+
+    def test_confirm_permission_yes(self):
+        app = make_app()
+        request = PermissionRequest(
+            tool_name="bash",
+            tool_input={"command": "echo hello"},
+            message="工具 'bash' 将执行写入操作，是否确认？",
+        )
+        with patch.object(app, "_is_interactive_confirmation_available", return_value=True), \
+             patch.object(app.console, "print") as mock_print, \
+             patch.object(app.console, "input", return_value="y"):
+            result = app.confirm_permission(request)
+
+        assert result == PermissionConfirmationOutcome.APPROVED
+        mock_print.assert_called_once()
+
+    def test_confirm_permission_no(self):
+        app = make_app()
+        request = PermissionRequest(
+            tool_name="write",
+            tool_input={"file_path": "a.txt"},
+            message="工具 'write' 将执行写入操作，是否确认？",
+        )
+        with patch.object(app, "_is_interactive_confirmation_available", return_value=True), \
+             patch.object(app.console, "print"), \
+             patch.object(app.console, "input", return_value="n"):
+            result = app.confirm_permission(request)
+
+        assert result == PermissionConfirmationOutcome.DENIED
+
+    def test_confirm_permission_enter_defaults_to_deny(self):
+        app = make_app()
+        request = PermissionRequest(
+            tool_name="edit",
+            tool_input={"file_path": "a.txt"},
+            message="工具 'edit' 将执行写入操作，是否确认？",
+            preview="预览模式：以下 diff 尚未写入文件。\n--- a/a.txt",
+        )
+        with patch.object(app, "_is_interactive_confirmation_available", return_value=True), \
+             patch.object(app.console, "print"), \
+             patch.object(app.console, "input", return_value=""):
+            result = app.confirm_permission(request)
+
+        assert result == PermissionConfirmationOutcome.DENIED
+
+    def test_confirm_permission_unavailable_in_noninteractive_mode(self):
+        app = make_app()
+        request = PermissionRequest(
+            tool_name="bash",
+            tool_input={"command": "echo hello"},
+            message="工具 'bash' 将执行写入操作，是否确认？",
+        )
+        with patch.object(app, "_is_interactive_confirmation_available", return_value=False), \
+             patch.object(app.console, "print") as mock_print:
+            result = app.confirm_permission(request)
+
+        assert result == PermissionConfirmationOutcome.UNAVAILABLE
+        mock_print.assert_not_called()
+
+
 class TestErrorRendering:
     """错误渲染测试"""
 
@@ -231,14 +297,14 @@ class TestEventDispatch:
         event = StreamEvent(type="tool_result", content="output", is_error=False)
         with patch.object(app, "show_tool_result") as mock:
             app._handle_event(event)
-            mock.assert_called_once_with("output", False)
+            mock.assert_called_once_with("output", False, None)
 
     def test_handle_tool_result_error_event(self):
         app = make_app()
         event = StreamEvent(type="tool_result", content="error", is_error=True)
         with patch.object(app, "show_tool_result") as mock:
             app._handle_event(event)
-            mock.assert_called_once_with("error", True)
+            mock.assert_called_once_with("error", True, None)
 
     def test_handle_unknown_event(self):
         app = make_app()
@@ -394,3 +460,17 @@ class TestCompactCommand:
             result = app._handle_command("/compact")
             assert result is True
             assert "API error" in str(mock_print.call_args)
+
+
+class TestResetCommandCallback:
+    """重置命令回调测试"""
+
+    def test_reset_command_with_callback(self):
+        on_reset = MagicMock()
+        app = AgentApp(on_message=lambda m: iter([]), on_reset=on_reset)
+
+        with patch.object(app.console, "print"):
+            result = app._handle_command("/reset")
+
+        assert result is True
+        on_reset.assert_called_once()

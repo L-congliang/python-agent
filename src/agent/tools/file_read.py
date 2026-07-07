@@ -15,6 +15,7 @@ import chardet
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
 from agent.tools.base import build_tool
+from agent.tools.observation_helper import build_observation
 
 
 # ============================================================
@@ -289,19 +290,29 @@ def execute_file_read(input: dict[str, Any], context: ToolUseContext) -> ToolRes
         # 带缓存读取（文本文件）
         content = _read_file_with_cache(abs_path, context)
 
-        # 先应用 offset/limit 到原始内容，再截断（避免截断破坏行号对应关系）
+        # 先应用 offset/limit 到原始内容（selected_content 是完整切片，不截断）
         lines = content.split("\n")
         start = offset - 1  # offset 从 1 开始，转为 0-based index
         end = start + limit
         selected_content = "\n".join(lines[start:end])
 
-        # 截断选中内容（如果超过 MAX_LINES）
-        truncated = _truncate_lines(selected_content)
+        # 添加行号（完整切片）
+        full_output = _format_with_line_numbers(selected_content, start_line=offset)
 
-        # 添加行号
-        result = _format_with_line_numbers(truncated, start_line=offset)
+        # Observation Budget 契约：统一截断（file_read 保留头部）
+        # output 保持完整（full_output），observation.preview 是截断版本
+        preview, observation = build_observation(
+            output=full_output,
+            tool_name="read",
+            artifact_dir=context.artifact_dir,
+            strategy="head",  # file_read 保留头部
+        )
 
-        return ToolResult(output=result, is_error=False)
+        return ToolResult(
+            output=full_output,  # output 是完整切片（向后兼容）
+            is_error=False,
+            observation=observation,  # observation.preview 是截断版本
+        )
 
     except UnicodeDecodeError:
         return ToolResult(

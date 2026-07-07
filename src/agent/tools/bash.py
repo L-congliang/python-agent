@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,7 @@ import sys
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
 from agent.tools.base import build_tool
+from agent.tools.observation_helper import build_observation, DEFAULT_MAX_LINES
 
 
 # ============================================================
@@ -49,6 +51,14 @@ def _build_safe_env() -> dict[str, str]:
 _shell_cache: tuple[str, str] | None = None
 
 
+def _is_usable_bash(path: str) -> bool:
+    """判断检测到的 bash 是否是真正可用的 shell。"""
+    normalized = os.path.normcase(path)
+    if sys.platform == "win32" and normalized.endswith(os.path.normcase(r"\Windows\System32\bash.exe")):
+        return False
+    return True
+
+
 def _detect_shell() -> tuple[str, str]:
     """检测可用 shell，返回 (executable, arg_prefix)
 
@@ -63,14 +73,18 @@ def _detect_shell() -> tuple[str, str]:
     if _shell_cache is not None:
         return _shell_cache
 
-    # 优先找 bash（Git Bash 或系统自带）
+    # 优先找 bash（Git Bash 或其他真实 POSIX shell）
     bash = shutil.which("bash")
-    if bash:
+    if bash and _is_usable_bash(bash):
         _shell_cache = (bash, "-c")
         return _shell_cache
 
-    # Windows fallback: cmd.exe
+    # Windows fallback: PowerShell 比 cmd.exe 兼容更多日常命令
     if sys.platform == "win32":
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
+        if powershell:
+            _shell_cache = (powershell, "-c")
+            return _shell_cache
         _shell_cache = ("cmd.exe", "/c")
         return _shell_cache
 
@@ -100,6 +114,33 @@ def _truncate_output(output: str, max_lines: int = MAX_OUTPUT_LINES) -> str:
     truncated = lines[-max_lines:]
     header = f"... (truncated {len(lines) - max_lines} lines)\n"
     return header + '\n'.join(truncated)
+
+
+def _normalize_command_for_shell(command: str, shell_exe: str) -> str:
+    """为 fallback shell 做最小兼容转换。"""
+    shell_name = os.path.basename(shell_exe).lower()
+    if "powershell" not in shell_name and shell_name != "pwsh.exe":
+        return command
+
+    stripped = command.strip()
+
+    if stripped == "true":
+        return "exit 0"
+
+    stderr_echo = re.fullmatch(r"echo\s+(.+?)\s*>&2", stripped)
+    if stderr_echo:
+        message = stderr_echo.group(1).strip().strip("'").strip('"')
+        return f"[Console]::Error.WriteLine('{message}')"
+
+    seq_loop = re.fullmatch(
+        r"for i in \$\(seq 1 (\d+)\); do echo line \$i; done",
+        stripped,
+    )
+    if seq_loop:
+        count = seq_loop.group(1)
+        return f"1..{count} | ForEach-Object {{ \"line $_\" }}"
+
+    return command
 
 
 # ============================================================
@@ -164,6 +205,9 @@ def execute_bash(input: dict, context: ToolUseContext) -> ToolResult:
 
     # 检测 shell
     shell_exe, shell_arg = _detect_shell()
+    command = _normalize_command_for_shell(command, shell_exe)
+    if os.path.basename(shell_exe).lower() in {"powershell.exe", "pwsh.exe"}:
+        command = "$ErrorActionPreference='Stop'; " + command
 
     # 确保 workdir 是绝对路径（context.cwd 可能是 "."）
     if workdir and not os.path.isabs(workdir):
@@ -186,16 +230,27 @@ def execute_bash(input: dict, context: ToolUseContext) -> ToolResult:
         # 格式化输出
         output_parts = []
         if result.stdout:
-            stdout = _truncate_output(result.stdout)
-            output_parts.append(stdout)
+            output_parts.append(result.stdout)
         if result.stderr:
             output_parts.append(f"\n[stderr]\n{result.stderr}")
         output_parts.append(f"\n[exit code: {result.returncode}]")
 
-        output = "".join(output_parts)
+        full_output = "".join(output_parts)
         is_error = result.returncode != 0
 
-        return ToolResult(output=output, is_error=is_error)
+        # Observation Budget 契约：统一截断
+        preview, observation = build_observation(
+            output=full_output,
+            tool_name="bash",
+            artifact_dir=context.artifact_dir,
+            strategy="tail",  # bash 保留尾部
+        )
+
+        return ToolResult(
+            output=full_output,  # output 保持完整（向后兼容）
+            is_error=is_error,
+            observation=observation,  # 新增 observation
+        )
 
     except subprocess.TimeoutExpired:
         return ToolResult(

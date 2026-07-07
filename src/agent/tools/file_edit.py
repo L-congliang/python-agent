@@ -6,13 +6,16 @@
 
 from __future__ import annotations
 
+import difflib
 import os
+import tempfile
 from typing import Any
 
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
 from agent.tools.base import build_tool
 from agent.tools.file_write import _resolve_path, _update_cache
+from agent.tools.observation_helper import build_observation
 
 
 # ============================================================
@@ -37,6 +40,11 @@ FILE_EDIT_PARAMETERS = {
         "replace_all": {
             "type": "boolean",
             "description": "是否替换所有匹配项（默认 false）",
+            "default": False,
+        },
+        "preview": {
+            "type": "boolean",
+            "description": "是否只生成 diff 预览而不写入文件，默认 false",
             "default": False,
         },
     },
@@ -81,6 +89,14 @@ def validate_file_edit_input(raw_input: dict[str, Any], context: ToolUseContext)
     if new_string is None or not isinstance(new_string, str) or new_string == "":
         return ValidationResult.failure("new_string 不能为空")
 
+    replace_all = raw_input.get("replace_all", False)
+    if not isinstance(replace_all, bool):
+        return ValidationResult.failure("replace_all 必须是布尔值")
+
+    preview = raw_input.get("preview", False)
+    if not isinstance(preview, bool):
+        return ValidationResult.failure("preview 必须是布尔值")
+
     # 检查文件存在性
     abs_path = _resolve_path(file_path, context.cwd)
     if not os.path.exists(abs_path):
@@ -108,6 +124,46 @@ def validate_file_edit_input(raw_input: dict[str, Any], context: ToolUseContext)
             return ValidationResult.failure(f"old_string 匹配多个（{count} 个），请提供更精确的 old_string")
 
     return ValidationResult.success()
+
+
+def _build_unified_diff(file_path: str, old_content: str, new_content: str) -> str:
+    """生成 unified diff 文本。"""
+    diff_lines = difflib.unified_diff(
+        old_content.splitlines(),
+        new_content.splitlines(),
+        fromfile=f"a/{file_path}",
+        tofile=f"b/{file_path}",
+        lineterm="",
+    )
+    return "\n".join(diff_lines)
+
+
+def _atomic_write_text(file_path: str, content: str) -> None:
+    """通过临时文件 + os.replace 原子写入，避免破坏原文件。"""
+    directory = os.path.dirname(file_path) or "."
+    prefix = f".{os.path.basename(file_path)}."
+    fd, temp_path = tempfile.mkstemp(
+        prefix=prefix,
+        suffix=".tmp",
+        dir=directory,
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+            temp_file.write(content)
+            temp_file.flush()
+            try:
+                os.fsync(temp_file.fileno())
+            except OSError:
+                pass
+        os.replace(temp_path, file_path)
+    except Exception:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ============================================================
@@ -151,6 +207,7 @@ def execute_file_edit(input: dict[str, Any], context: ToolUseContext) -> ToolRes
         old_string: str = input["old_string"]
         new_string: str = input["new_string"]
         replace_all: bool = input.get("replace_all", False)
+        preview: bool = input.get("preview", False)
 
         # 2. 解析路径
         abs_path = _resolve_path(file_path, context.cwd)
@@ -189,17 +246,49 @@ def execute_file_edit(input: dict[str, Any], context: ToolUseContext) -> ToolRes
         # 8. 执行替换
         if replace_all:
             new_content = content.replace(old_string, new_string)
+            replacement_count = content.count(old_string)
         else:
             new_content = content.replace(old_string, new_string, 1)
+            replacement_count = 1
 
-        # 9. 写入文件
-        with open(abs_path, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        diff_text = _build_unified_diff(file_path, content, new_content)
+        if not diff_text:
+            diff_text = "(无文本差异)"
+
+        if preview:
+            return ToolResult(
+                output=(
+                    "预览模式：以下 diff 尚未写入文件。\n"
+                    f"{diff_text}"
+                ),
+                is_error=False,
+            )
+
+        # 9. 原子写入，确保失败时不会留下半截文件
+        _atomic_write_text(abs_path, new_content)
 
         # 10. 更新缓存
         _update_cache(abs_path, new_content, context)
 
-        return ToolResult(output="修改成功", is_error=False)
+        # 构建输出
+        output = (
+            f"修改成功：共替换 {replacement_count} 处，已通过原子写入保护原文件。\n"
+            f"{diff_text}"
+        )
+
+        # Observation Budget 契约：统一截断（edit 保留头部，因为 diff 通常不长）
+        preview, observation = build_observation(
+            output=output,
+            tool_name="edit",
+            artifact_dir=context.artifact_dir,
+            strategy="head",
+        )
+
+        return ToolResult(
+            output=output,  # output 保持完整（向后兼容）
+            is_error=False,
+            observation=observation,  # 新增 observation
+        )
 
     except Exception as e:
         return ToolResult(output=f"编辑失败: {e}", is_error=True)
@@ -211,7 +300,7 @@ def execute_file_edit(input: dict[str, Any], context: ToolUseContext) -> ToolRes
 
 file_edit_tool = build_tool(
     name="edit",
-    description="修改文件内容。基于 old_string/new_string 精确替换。优先于 write 使用（edit 是局部替换，不会覆盖整个文件）。",
+    description="修改文件内容。基于 old_string/new_string 精确替换，支持 preview diff。优先于 write 使用（edit 是局部替换，不会覆盖整个文件）。",
     parameters=FILE_EDIT_PARAMETERS,
     execute_fn=execute_file_edit,
     is_read_only=lambda input: False,       # 写操作

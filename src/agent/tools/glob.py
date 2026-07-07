@@ -13,6 +13,7 @@ from typing import Any
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
 from agent.tools.base import build_tool
+from agent.tools.observation_helper import build_observation
 
 
 # ============================================================
@@ -180,7 +181,21 @@ def execute_glob(input: dict[str, Any], context: ToolUseContext) -> ToolResult:
 
         # 格式化输出
         output_lines = files + [f"\n(共 {total} 个文件)"]
-        return ToolResult(output="\n".join(output_lines), is_error=False)
+        full_output = "\n".join(output_lines)
+
+        # Observation Budget 契约：统一截断（glob 保留头部）
+        preview, observation = build_observation(
+            output=full_output,
+            tool_name="glob",
+            artifact_dir=context.artifact_dir,
+            strategy="head",  # glob 保留头部（最新修改的在前）
+        )
+
+        return ToolResult(
+            output=full_output,  # output 保持完整（向后兼容）
+            is_error=False,
+            observation=observation,  # 新增 observation
+        )
 
     except ValueError as e:
         # pattern 无效

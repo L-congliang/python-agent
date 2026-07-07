@@ -15,6 +15,7 @@ Cool Code 的视觉体验：
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -23,7 +24,12 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
-from agent.core.types import StreamEvent
+from agent.core.types import (
+    ObservationMetadata,
+    PermissionConfirmationOutcome,
+    PermissionRequest,
+    StreamEvent,
+)
 
 # ============================================================
 # 主题颜色
@@ -35,6 +41,7 @@ INACTIVE_GRAY = "rgb(153,153,153)"  # 次要文字
 
 # 工具结果截断阈值
 MAX_OUTPUT_LINES = 50
+MAX_CONFIRM_PREVIEW_LINES = 40
 
 # ============================================================
 # Logo（机器人像素风格）
@@ -45,11 +52,26 @@ LOGO = """  ▄▄▄
 █ █ █ █
 ███████
  █   █"""
+ASCII_LOGO = "  [ Cool Code ]"
 
 
-def get_logo_lines() -> list[str]:
+def _supports_text(text: str, encoding: str | None) -> bool:
+    """判断当前终端编码是否支持给定文本。"""
+    if not encoding:
+        return True
+    if sys.platform == "win32" and "utf" not in encoding.lower():
+        return False
+    try:
+        text.encode(encoding)
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def get_logo_lines(use_ascii: bool = False) -> list[str]:
     """获取 Logo 的行数据"""
-    return LOGO.strip().split("\n")
+    logo = ASCII_LOGO if use_ascii else LOGO
+    return logo.strip().split("\n")
 
 
 # ============================================================
@@ -78,6 +100,7 @@ class AgentApp:
         self,
         on_message: Callable[[str], Iterator[StreamEvent]],
         on_compact: Callable[[], tuple[int, int]] | None = None,
+        on_reset: Callable[[], None] | None = None,
         model: str = "mimo-v2.5-pro",
         version: str = "0.1.0",
     ) -> None:
@@ -92,9 +115,14 @@ class AgentApp:
         self.console = Console()
         self.on_message = on_message
         self.on_compact = on_compact
+        self.on_reset = on_reset
         self.model = model
         self.version = version
         self._stream_buffer: str = ""
+        encoding = getattr(self.console.file, "encoding", None)
+        self._use_ascii_ui = not _supports_text(LOGO, encoding)
+        self._prompt_symbol = ">" if self._use_ascii_ui else "❯"
+        self._welcome_symbol = "*" if self._use_ascii_ui else "✨"
 
     def run(self) -> None:
         """启动交互循环"""
@@ -141,7 +169,7 @@ class AgentApp:
         content = Text()
 
         # Logo
-        logo_lines = get_logo_lines()
+        logo_lines = get_logo_lines(use_ascii=self._use_ascii_ui)
         for line in logo_lines:
             content.append(f"  {line}\n", style=f"bold {BRAND_COLOR}")
 
@@ -169,7 +197,7 @@ class AgentApp:
     def show_welcome(self) -> None:
         """显示欢迎信息（简化版）"""
         self.console.print(
-            f"\n  [{BRAND_COLOR}]✦[/] "
+            f"\n  [{BRAND_COLOR}]{self._welcome_symbol}[/] "
             f"[bold]Welcome to Cool Code[/bold] "
             f"[{INACTIVE_GRAY}]v{self.version}[/]\n"
         )
@@ -181,7 +209,7 @@ class AgentApp:
             用户输入的文本
         """
         try:
-            return self.console.input(f"\n[{BRAND_COLOR}]❯[/] ")
+            return self.console.input(f"\n[{BRAND_COLOR}]{self._prompt_symbol}[/] ")
         except KeyboardInterrupt:
             raise
         except EOFError:
@@ -238,20 +266,32 @@ class AgentApp:
         )
         self.console.print(panel)
 
-    def show_tool_result(self, output: str, is_error: bool = False) -> None:
+    def show_tool_result(
+        self,
+        output: str,
+        is_error: bool = False,
+        observation: ObservationMetadata | None = None,
+    ) -> None:
         """显示工具执行结果
 
         Args:
             output: 工具输出
             is_error: 是否出错
+            observation: 观察元数据（可选，用于显示截断提示）
         """
-        lines = output.split("\n")
+        # 如果有 observation 且被截断，使用 preview
+        if observation is not None and observation.was_truncated:
+            display_output = observation.preview or output
+        else:
+            display_output = output
+
+        lines = display_output.split("\n")
 
         if len(lines) > MAX_OUTPUT_LINES:
             truncated = "\n".join(lines[:MAX_OUTPUT_LINES])
             truncated += f"\n... ({len(lines) - MAX_OUTPUT_LINES} more lines)"
         else:
-            truncated = output
+            truncated = display_output
 
         border_style = "red" if is_error else INACTIVE_GRAY
         style = "red" if is_error else ""
@@ -263,6 +303,88 @@ class AgentApp:
             padding=(0, 1),
         )
         self.console.print(panel)
+
+        # 显示 observation 元信息（截断提示 + artifact 路径）
+        if observation is not None and observation.was_truncated:
+            self._show_observation_hint(observation)
+
+    def _show_observation_hint(self, observation: ObservationMetadata) -> None:
+        """显示 observation 元信息（截断提示 + artifact 路径）
+
+        Args:
+            observation: 观察元数据
+        """
+        hint_parts = []
+
+        if observation.full_output_chars > 0:
+            hint_parts.append(f"输出已截断（完整内容 {observation.full_output_chars} 字符）")
+
+        if observation.artifact_path:
+            hint_parts.append(f"完整结果已保存到: {observation.artifact_path}")
+
+        if hint_parts:
+            hint_text = " | ".join(hint_parts)
+            self.console.print(f"  [dim]{hint_text}[/dim]")
+
+    def _is_interactive_confirmation_available(self) -> bool:
+        """判断当前 CLI 是否可进行交互确认。"""
+        stream = getattr(self.console, "file", None)
+        if stream is None or not hasattr(stream, "isatty"):
+            return False
+        try:
+            return bool(stream.isatty())
+        except Exception:
+            return False
+
+    def _truncate_preview(self, preview: str) -> str:
+        """截断确认预览，避免在终端刷屏。"""
+        lines = preview.splitlines()
+        if len(lines) <= MAX_CONFIRM_PREVIEW_LINES:
+            return preview
+        head = "\n".join(lines[:MAX_CONFIRM_PREVIEW_LINES])
+        return f"{head}\n... ({len(lines) - MAX_CONFIRM_PREVIEW_LINES} more lines)"
+
+    def confirm_permission(
+        self,
+        request: PermissionRequest,
+    ) -> PermissionConfirmationOutcome:
+        """在 CLI 中向用户确认高风险工具调用。"""
+        if not self._is_interactive_confirmation_available():
+            return PermissionConfirmationOutcome.UNAVAILABLE
+
+        content = Text()
+        content.append(f"{request.message}\n", style="bold")
+
+        if request.tool_name == "bash":
+            command = str(request.tool_input.get("command", "")).strip()
+            if command:
+                content.append("命令: ", style=INACTIVE_GRAY)
+                content.append(f"{command}\n")
+        elif request.tool_name in ("write", "edit"):
+            file_path = str(request.tool_input.get("file_path", "")).strip()
+            if file_path:
+                content.append("文件: ", style=INACTIVE_GRAY)
+                content.append(f"{file_path}\n")
+
+        if request.preview:
+            content.append("\n预览:\n", style=INACTIVE_GRAY)
+            content.append(self._truncate_preview(request.preview))
+
+        panel = Panel(
+            content,
+            title=f"[bold {BRAND_COLOR}]需要确认: {request.tool_name}[/]",
+            border_style="yellow",
+            padding=(0, 1),
+        )
+        self.console.print(panel)
+
+        answer = self.console.input(
+            f"[yellow]是否允许执行？[/yellow] [{BRAND_COLOR}]y[/] / [red]N[/] (默认 N): "
+        ).strip().lower()
+
+        if answer in {"y", "yes"}:
+            return PermissionConfirmationOutcome.APPROVED
+        return PermissionConfirmationOutcome.DENIED
 
     def show_error(self, message: str) -> None:
         """显示错误信息
@@ -298,6 +420,7 @@ class AgentApp:
             self.show_tool_result(
                 str(event.content) if event.content else "",
                 event.is_error,
+                event.observation,
             )
 
     def _handle_command(self, cmd: str) -> bool:
@@ -335,6 +458,8 @@ class AgentApp:
             return True
 
         if cmd == "/reset":
+            if self.on_reset:
+                self.on_reset()
             self.console.print("[yellow]对话已重置[/yellow]")
             return True
 
@@ -360,11 +485,19 @@ class AgentApp:
 # ============================================================
 
 
-def start_cli_session(on_message: Callable[[str], Iterator[StreamEvent]]) -> None:
+def start_cli_session(
+    on_message: Callable[[str], Iterator[StreamEvent]],
+    on_compact: Callable[[], tuple[int, int]] | None = None,
+    on_reset: Callable[[], None] | None = None,
+) -> None:
     """启动 CLI 会话
 
     Args:
         on_message: 消息回调
     """
-    app = AgentApp(on_message=on_message)
+    app = AgentApp(
+        on_message=on_message,
+        on_compact=on_compact,
+        on_reset=on_reset,
+    )
     app.run()

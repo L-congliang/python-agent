@@ -37,6 +37,13 @@ class PermissionBehavior(Enum):
     ASK = "ask"         # 询问用户
 
 
+class PermissionConfirmationOutcome(Enum):
+    """权限确认结果。"""
+    APPROVED = "approved"
+    DENIED = "denied"
+    UNAVAILABLE = "unavailable"
+
+
 @dataclass
 class PermissionDecision:
     """权限决策结果
@@ -49,6 +56,11 @@ class PermissionDecision:
     behavior: PermissionBehavior
     message: str = ""
     updated_input: dict | None = None  # allow 时可修改 input
+
+    @property
+    def reason(self) -> str:
+        """兼容旧代码使用的 reason 字段名。"""
+        return self.message
 
     @classmethod
     def allow(cls, updated_input: dict | None = None) -> PermissionDecision:
@@ -64,6 +76,15 @@ class PermissionDecision:
     def ask(cls, message: str) -> PermissionDecision:
         """询问用户"""
         return cls(behavior=PermissionBehavior.ASK, message=message)
+
+
+@dataclass
+class PermissionRequest:
+    """交互式权限确认请求。"""
+    tool_name: str
+    tool_input: dict[str, Any]
+    message: str
+    preview: str | None = None
 
 
 # ============================================================
@@ -94,8 +115,43 @@ class ValidationResult:
 
 
 # ============================================================
+# 观察元数据（Observation Budget 契约）
+# ============================================================
+
+
+@dataclass
+class ObservationMetadata:
+    """观察元数据 - 工具输出的双层契约
+
+    设计决策:
+    - 为什么需要双层契约？
+      长输出（grep/bash/read）如果全部回灌到消息历史，会导致上下文膨胀。
+      双层契约让工具同时提供 preview（模型可见）和 artifact（用户可追溯）。
+
+    - 为什么 preview 是可选的？
+      保持向后兼容：旧工具只返回 output，新工具返回 output + observation。
+      没有 preview 时，loop 仍用 output 字段，行为不变。
+
+    - artifact_path 的作用？
+      当输出被截断时，完整结果保存到文件，artifact_path 记录路径。
+      用户可以通过路径找到完整结果，模型只看到 preview。
+
+    Attributes:
+        preview: 模型可见的预览内容（截断后的版本）
+        artifact_path: 完整输出保存的文件路径
+        was_truncated: 输出是否被截断
+        full_output_chars: 完整输出的字符数（用于统计）
+    """
+    preview: str | None = None
+    artifact_path: str | None = None
+    was_truncated: bool = False
+    full_output_chars: int = 0
+
+
+# ============================================================
 # 工具执行结果（对齐 Claude Code 的 ToolResult）
 # ============================================================
+
 
 @dataclass
 class ToolResult:
@@ -107,10 +163,12 @@ class ToolResult:
     - output: 输出内容（文本或结构化数据）
     - is_error: 是否出错
     - new_messages: 可选，注入到对话历史的新消息
+    - observation: 可选，观察元数据（preview + artifact 双层契约）
     """
     output: Any
     is_error: bool = False
     new_messages: list[Message] | None = None
+    observation: ObservationMetadata | None = None
 
 
 # ============================================================
@@ -165,3 +223,4 @@ class StreamEvent:
     tool_name: str | None = None      # tool_call 时的工具名
     tool_input: dict | None = None    # tool_call 时的参数
     is_error: bool = False            # tool_result 时是否出错
+    observation: ObservationMetadata | None = None  # tool_result 时的观察元数据

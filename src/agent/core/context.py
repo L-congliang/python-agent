@@ -115,3 +115,6 @@ class ToolUseContext:
 
     # 多 Agent 支持：指向当前 AgentLoop 的引用
     agent_loop: Any = None  # AgentLoop，用 Any 避免循环导入
+
+    # Observation Budget：artifact 保存目录
+    artifact_dir: str | None = None

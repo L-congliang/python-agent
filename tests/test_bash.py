@@ -376,11 +376,17 @@ class TestOutputTruncationIntegration:
             {"command": "for i in $(seq 1 3000); do echo line $i; done"},
             context,
         )
-        assert "truncated" in result.output
-        assert "line 3000" in result.output  # 尾部保留
+        # output 保持完整（向后兼容）
+        assert "line 3000" in result.output
+        # observation 包含截断信息
+        assert result.observation is not None
+        assert result.observation.was_truncated is True
+        assert "truncated" in result.observation.preview
 
     def test_small_output_not_truncated(self, context):
         """小量输出不截断"""
         result = execute_bash({"command": "echo hello"}, context)
-        assert "truncated" not in result.output
         assert "hello" in result.output
+        # observation 应该存在但未截断
+        assert result.observation is not None
+        assert result.observation.was_truncated is False

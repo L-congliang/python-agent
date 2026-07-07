@@ -14,6 +14,7 @@ from typing import Any
 from agent.core.context import ToolUseContext
 from agent.core.types import ToolResult, ValidationResult
 from agent.tools.base import build_tool
+from agent.tools.observation_helper import build_observation
 
 
 # ============================================================
@@ -255,7 +256,21 @@ def execute_grep(input: dict[str, Any], context: ToolUseContext) -> ToolResult:
             output_lines = []
             for r in results:
                 output_lines.append(f"{r['file']}:{r['line']}:{r['content']}")
-            return ToolResult(output="\n".join(output_lines), is_error=False)
+            full_output = "\n".join(output_lines)
+
+            # Observation Budget 契约：统一截断（grep 保留头部）
+            preview, observation = build_observation(
+                output=full_output,
+                tool_name="grep",
+                artifact_dir=context.artifact_dir,
+                strategy="head",  # grep 保留头部（最新匹配在前）
+            )
+
+            return ToolResult(
+                output=full_output,  # output 保持完整（向后兼容）
+                is_error=False,
+                observation=observation,  # 新增 observation
+            )
 
         elif result.returncode == 1:
             # 无匹配结果（ripgrep 返回 1 表示无匹配）
