@@ -27,6 +27,7 @@ from agent.memory.episodic import EpisodicNotes
 from agent.memory.durable import DurableMemory
 from agent.memory.retrieval import Retrieval
 from agent.memory.renderer import MemoryRenderer
+from agent.memory.session_search import SessionSearch
 
 logger = logging.getLogger("agent.memory.manager")
 
@@ -54,11 +55,16 @@ class MemoryManager:
         memory.save()
     """
 
-    def __init__(self, memory_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        memory_dir: str | Path | None = None,
+        session_dir: str | Path | None = None,
+    ) -> None:
         """初始化
 
         Args:
             memory_dir: 记忆目录路径
+            session_dir: session 目录路径（用于 cross-session retrieval）
         """
         self._working = WorkingMemory()
         self._files = FileSummaries()
@@ -70,6 +76,11 @@ class MemoryManager:
             self._files,
             self._notes,
             self._durable,
+        )
+        # Cross-session retrieval
+        self._session_search = SessionSearch(
+            session_dir=session_dir,
+            memory_dir=memory_dir,
         )
 
     def load(self) -> None:
@@ -333,8 +344,9 @@ class MemoryManager:
         - recent_files: top 3-5（总是注入）
         - file_summaries: relevant top-k（按相关性取 top-3）
         - episodic_notes: hit top 1-3（search_notes 命中后注入）
+        - cross_session_recall: hit top 1-3（SessionSearch 命中后注入）
 
-        顺序：task → recent_files → file_summaries → episodic_notes。
+        顺序：task → recent_files → file_summaries → episodic_notes → cross_session_recall。
         超出 max_tokens 时从后往前截断。
 
         Args:
@@ -350,6 +362,7 @@ class MemoryManager:
             "recent_files": 0,
             "file_summaries": 0,
             "episodic_notes": 0,
+            "cross_session_recall": 0,
         }
 
         # 1. task（总是注入）
@@ -380,12 +393,21 @@ class MemoryManager:
                     layers.append(notes_str)
                     injection_stats["episodic_notes"] = len(notes)
 
+        # 5. cross_session_recall（hit top 1-3，SessionSearch 命中后注入）
+        if query:
+            recall_results = self._session_search.search(query, top_k=3)
+            if recall_results:
+                recall_str = self._renderer.render_cross_session_recall(recall_results)
+                if recall_str:
+                    layers.append(recall_str)
+                    injection_stats["cross_session_recall"] = len(recall_results)
+
         # 记录注入统计（用于调试和分析）
         self._last_injection_stats = injection_stats
 
         result = "\n".join(layers)
 
-        # 从后往前截断（先丢 episodic_notes，再丢 file_summaries）
+        # 从后往前截断（先丢 cross_session_recall，再丢 episodic_notes，再丢 file_summaries）
         estimated_tokens = len(result) // 4
         if estimated_tokens > max_tokens:
             target_chars = max_tokens * 4

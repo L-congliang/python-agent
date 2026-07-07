@@ -179,8 +179,8 @@ class AgentLoop:
         # 上下文管理器（预算制 prompt 组装）
         self._context_manager = ContextManager()
         self._last_context_metadata: ContextMetadata | None = None
-        # 记忆管理器
-        self._memory = MemoryManager()
+        # 记忆管理器（传入 session_dir 以支持 cross-session retrieval）
+        self._memory = MemoryManager(session_dir=self._config.session_dir)
         self._memory.load()
         # 模型适配器（延迟导入，避免循环依赖）
         self._adapter: ModelAdapter
@@ -1066,7 +1066,7 @@ class AgentLoop:
         }
 
     def get_inspect_summary(self) -> dict[str, Any]:
-        """获取 inspect 摘要（run + session + workspace + checkpoint + freshness）
+        """获取 inspect 摘要（run + session + workspace + checkpoint + freshness + memory）
 
         Returns:
             inspect 摘要字典
@@ -1077,6 +1077,35 @@ class AgentLoop:
             "workspace": self.get_workspace_summary(),
             "checkpoint": self.get_checkpoint_summary(),
             "freshness": self._resume_freshness_summary,
+            "memory": self.get_memory_summary(),
+        }
+
+    def get_memory_summary(self) -> dict[str, Any]:
+        """获取 memory 摘要
+
+        Returns:
+            memory 摘要字典
+        """
+        if self._memory is None:
+            return {}
+
+        # 获取 durable topics
+        durable_topics = self._memory._durable.get_all_topics()
+
+        # 获取 episodic notes 数量
+        notes_count = len(self._memory._notes)
+
+        # 获取 working memory
+        working = self._memory._working
+        task_summary = working.task_summary or ""
+        recent_files = working.get_recent_files()
+
+        return {
+            "durable_topics_count": len(durable_topics),
+            "durable_topics": durable_topics,
+            "recent_episodic_notes_count": notes_count,
+            "task_summary": task_summary,
+            "recent_files_count": len(recent_files),
         }
 
     def set_resume_freshness_summary(self, summary: dict[str, Any] | None) -> None:

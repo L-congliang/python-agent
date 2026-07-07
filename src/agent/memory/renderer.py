@@ -23,6 +23,7 @@ from agent.memory.working import WorkingMemory
 from agent.memory.file_summaries import FileSummaries
 from agent.memory.episodic import EpisodicNotes
 from agent.memory.durable import DurableMemory
+from agent.memory.session_search import SearchResult
 
 
 class MemoryRenderer:
@@ -142,6 +143,7 @@ class MemoryRenderer:
             responsibility = s.get("responsibility", "")
             key_entities = s.get("key_entities", [])
             recent_focus = s.get("recent_focus", "")
+            content = s.get("content", "")
 
             # 构建结构化摘要
             summary_parts = [f"  - {path}:"]
@@ -152,6 +154,9 @@ class MemoryRenderer:
                 summary_parts.append(f"      关键实体: {entities_str}")
             if recent_focus:
                 summary_parts.append(f"      最近重点: {recent_focus}")
+            if content:
+                preview = content.strip().replace("\n", " ")
+                summary_parts.append(f"      内容摘要: {preview[:80]}")
 
             parts.append("\n".join(summary_parts))
         return "\n".join(parts)
@@ -172,6 +177,23 @@ class MemoryRenderer:
             tags = ", ".join(n.get("tags", []))
             tag_str = f" [{tags}]" if tags else ""
             parts.append(f"  - {n['text']}{tag_str}")
+        return "\n".join(parts)
+
+    def render_cross_session_recall(self, results: list[SearchResult]) -> str:
+        """渲染 cross-session recall 结果
+
+        Args:
+            results: SessionSearch 返回的列表
+
+        Returns:
+            cross_session_recall 文本
+        """
+        if not results:
+            return ""
+        parts = ["cross_session_recall:"]
+        for r in results:
+            source_label = f"{r.source}:{r.source_id}"
+            parts.append(f"  - [{source_label}] {r.content[:100]}...")
         return "\n".join(parts)
 
     def render_compact(self) -> str:
