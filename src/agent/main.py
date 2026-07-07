@@ -42,6 +42,7 @@ def create_agent_loop(
     registry: ToolRegistry | None = None,
     artifact_dir: str | None = None,
     edit_history_dir: str | None = None,
+    session_dir: str | None = None,
 ) -> AgentLoop:
     """创建默认 AgentLoop。"""
     resolved_workspace_root = workspace_root or os.getcwd()
@@ -49,6 +50,8 @@ def create_agent_loop(
     resolved_artifact_dir = artifact_dir or os.path.join(resolved_workspace_root, ".artifacts")
     # 默认 edit history 目录：workspace/.agent/file-history
     resolved_edit_history_dir = edit_history_dir or os.path.join(resolved_workspace_root, ".agent", "file-history")
+    # 默认 session 目录：workspace/.agent/sessions
+    resolved_session_dir = session_dir or os.path.join(resolved_workspace_root, ".agent", "sessions")
     return AgentLoop(
         client,
         registry or create_default_registry(),
@@ -57,6 +60,7 @@ def create_agent_loop(
             workspace_root=resolved_workspace_root,
             artifact_dir=resolved_artifact_dir,
             edit_history_dir=resolved_edit_history_dir,
+            session_dir=resolved_session_dir,
         ),
     )
 
@@ -139,6 +143,22 @@ def create_agent_app(loop: AgentLoop, *, model: str) -> AgentApp:
 
 def main() -> None:
     """主入口"""
+    import argparse
+    import sys
+
+    # 只在直接运行时解析参数，不在 pytest 环境下解析
+    if hasattr(sys, '_getframe') and 'pytest' in sys.modules:
+        args = argparse.Namespace(resume=None)
+    else:
+        parser = argparse.ArgumentParser(description="Python Code Agent")
+        parser.add_argument(
+            "--resume",
+            type=str,
+            default=None,
+            help="恢复 session：latest 或 session_id",
+        )
+        args = parser.parse_args()
+
     setup_logging(debug=False)
 
     # 1. 加载配置
@@ -152,8 +172,38 @@ def main() -> None:
     # 2. 创建组件
     client = MimoClient(config)
     loop = create_agent_loop(client, model=config.model, workspace_root=os.getcwd())
+
+    # 3. 处理 --resume
+    if args.resume:
+        _handle_resume(loop, args.resume)
+
     app = create_agent_app(loop, model=config.model)
     app.run()
+
+
+def _handle_resume(loop: AgentLoop, resume_arg: str) -> None:
+    """处理 --resume 参数
+
+    Args:
+        loop: AgentLoop 实例
+        resume_arg: "latest" 或 session_id
+    """
+    if loop._session_store is None:
+        print("错误：session store 未启用，无法 resume")
+        sys.exit(1)
+
+    if resume_arg == "latest":
+        session_data = loop._session_store.load_latest()
+    else:
+        session_data = loop._session_store.load(resume_arg)
+
+    if session_data is None:
+        print(f"错误：找不到 session '{resume_arg}'")
+        sys.exit(1)
+
+    # 恢复 session state
+    loop.import_session_state(session_data)
+    print(f"已恢复 session: {session_data.get('id', 'unknown')}")
 
 
 if __name__ == "__main__":

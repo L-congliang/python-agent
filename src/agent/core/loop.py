@@ -114,6 +114,9 @@ class LoopConfig:
     # Edit History：编辑历史目录
     edit_history_dir: str | None = None  # None 表示不记录历史
 
+    # Session 持久化
+    session_dir: str | None = None  # None 表示不持久化 session
+
     # 多 Agent 配置
     enable_subagent: bool = True  # 是否启用 SubAgentTool
 
@@ -211,6 +214,13 @@ class AgentLoop:
         if self._config.edit_history_dir:
             from agent.persistence.edit_history_store import EditHistoryStore
             self._edit_history_store = EditHistoryStore(self._config.edit_history_dir)
+
+        # Session 持久化（延迟导入，避免循环依赖）
+        self._session_store: Any = None
+        self._session_id: str | None = None
+        if self._config.session_dir:
+            from agent.persistence.session_store import SessionStore
+            self._session_store = SessionStore(Path(self._config.session_dir))
 
         # Session Policy（延迟导入，避免循环依赖）
         self._session_policy: Any = None
@@ -896,6 +906,73 @@ class AgentLoop:
     def clear_tool_history(self) -> None:
         """清空工具执行历史（用于实验隔离 setup_turns 和主任务）"""
         self._tool_history.clear()
+
+    # ========== Session 持久化 ==========
+
+    def export_session_state(self) -> dict[str, Any]:
+        """导出当前 session 状态
+
+        Returns:
+            session 状态字典
+        """
+        return {
+            "session_id": self._session_id,
+            "messages": self._messages.copy(),
+            "turn_count": self._turn_count,
+            "tool_call_count": self._tool_call_count,
+            "total_tokens": self._total_tokens,
+            "memory": self._memory.export_state() if hasattr(self._memory, 'export_state') else {},
+            "workspace_root": self._config.workspace_root,
+        }
+
+    def import_session_state(self, state: dict[str, Any]) -> None:
+        """导入 session 状态
+
+        Args:
+            state: session 状态字典
+        """
+        self._session_id = state.get("session_id")
+        self._messages = state.get("messages", [])
+        self._turn_count = state.get("turn_count", 0)
+        self._tool_call_count = state.get("tool_call_count", 0)
+        self._total_tokens = state.get("total_tokens", 0)
+
+        # 恢复 memory
+        memory_state = state.get("memory", {})
+        if memory_state and hasattr(self._memory, 'import_state'):
+            self._memory.import_state(memory_state)
+
+        logger.info("Session state imported: session_id=%s, messages=%d",
+                     self._session_id, len(self._messages))
+
+    def save_session(self) -> str | None:
+        """保存当前 session
+
+        Returns:
+            session_id，如果未启用 session store 则返回 None
+        """
+        if self._session_store is None:
+            return None
+
+        state = self.export_session_state()
+        session_id = self._session_store.save(
+            messages=state["messages"],
+            memory=state["memory"],
+            workspace_root=state["workspace_root"],
+            session_id=self._session_id,
+        )
+        self._session_id = session_id
+        return session_id
+
+    @property
+    def session_id(self) -> str | None:
+        """当前 session ID"""
+        return self._session_id
+
+    @property
+    def session_store(self) -> Any:
+        """Session store"""
+        return self._session_store
 
     @property
     def task_state(self) -> TaskState:

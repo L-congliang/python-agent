@@ -61,6 +61,32 @@
 - 简历和面试表达更容易保持真实、一致、可复述
 - demo walkthrough 已明确标出：哪些演示路线需要 API key，哪些是 fake-model / local test
 
+## Phase 3.1 Task 1
+
+### Fix 1：无损 Session Persistence + Resume
+
+新增：
+- `tests/test_session_resume.py`
+
+修改：
+- `src/agent/core/loop.py`：增加 session_store、session_id、export_session_state、import_session_state、save_session
+- `src/agent/main.py`：增加 --resume 参数、_handle_resume 函数
+
+内容：
+- SessionStore 二层结构：raw resumable state（供程序恢复）+ summary/preview（供展示）
+- main.py 增加 --resume latest 和 --resume \<session_id\> 参数
+- AgentLoop 增加 export_session_state / import_session_state 接口
+- 默认 session 目录：workspace/.agent/sessions
+
+结果：
+- 新启动 CLI session 会生成 session_id
+- 完成一次用户消息后，session 可自动保存
+- --resume latest 能恢复最近一个 session
+- --resume \<session_id\> 能恢复指定 session
+- /reset 后开启新 session
+- 没有 session 时 --resume latest 给清晰提示
+- 测试基线从 997 提升到 1017
+
 ## Phase 2.3C
 
 ### Fix 1：真实远程 LLM Smoke 回归

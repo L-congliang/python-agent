@@ -160,6 +160,33 @@ A：
 
 这个设计让测试既能证明"链路没断"，又不会因为模型随机性而过脆。
 
+## Q：你怎么实现 session 持久化和恢复？
+
+A：
+
+我实现了无损 Session Persistence + Resume：
+
+1. **SessionStore 二层结构**：
+   - raw resumable state：供程序恢复（完整消息历史、memory、workspace_root）
+   - summary/preview：供 /sessions 和 inspect 展示（id、created_at、message_count）
+
+2. **--resume 参数**：
+   - `--resume latest`：恢复最近一个 session
+   - `--resume <session_id>`：恢复指定 session
+   - 没有 session 时给清晰提示，不崩溃
+
+3. **AgentLoop 接口**：
+   - `export_session_state()`：导出当前状态
+   - `import_session_state(state)`：导入状态
+   - `save_session()`：保存当前 session
+
+4. **默认行为**：
+   - 默认 session 目录：workspace/.agent/sessions
+   - /reset 后开启新 session，旧 session 保留
+   - 恢复后 session_id 延续，但 run_id 是新的
+
+这个设计让 session 不再只是内存态，而是可持久化、可恢复、可回看。
+
 ## Q：这个改动会破坏现有测试吗？
 
 A：
