@@ -10,10 +10,11 @@
 
 ## 最新状态
 
-- **当前功能**: P2 记忆系统 V2 正式量化实验完成 — 三组差异仅 3.5%，效果不显著
-- **最后更新**: 2026-07-06
+- **当前功能**: Agent Resume Hardening — benchmark verifiers、trace/reporter、patch benchmark
+- **最后更新**: 2026-07-08
 - **最后地点**: 家
 - **当前所在地**: 家
+- **Git**: `22692da` on `lcl` branch
 
 ---
 
@@ -28,7 +29,30 @@
 
 ## 工作日志
 
-### 2026-07-06 Session 29 — P2 记忆系统 V2 正式量化实验
+### 2026-07-08 Session 30 — Agent Resume Hardening (Codex PASS)
+
+**做了什么:**
+- 修复 coding benchmark 3 个 critical verifier 漏洞（no-op baseline: 20% → 0%）
+- 创建 coding_tasks_v2.json + benchmarks/verifiers/ 独立脚本
+- 增强 reporter: 20+ 字段、permission telemetry 全路径、aggregate metrics
+- 创建 15-task patch/file-edit benchmark（15/15, 100%）
+- 3 轮 Codex review，修复 verifier 路径回归、fixture_dir、deny 计数
+- 最终 Codex verdict: PASS
+
+**关键文件:**
+- `benchmarks/coding_tasks_v2.json` — 硬化 benchmark
+- `benchmarks/patch_tasks.json` — 原语级 patch benchmark
+- `benchmarks/verifiers/` — 独立 verifier 脚本
+- `scripts/run_noop_baseline.py` — no-op baseline runner
+- `scripts/run_patch_benchmark.py` — patch benchmark runner
+- `tests/test_noop_baseline.py`, `test_patch_benchmark.py`, `test_reporter_enhanced.py`
+- `docs/test-reports/agent_resume_hardening_report.md` — 完整验收报告
+
+**简历可写指标:**
+- No-op baseline false positive 修复: 20% → 0%
+- Patch edit/write 原语可靠性: 100% (15/15)
+- Permission telemetry: deny/ask/allow 全路径 + 4 种 deny 原因
+- Tool trace: 20+ fields/event
 
 **做了什么:**
 - 冻结实验版本 `daf9a48` (Memory V2 + Evaluation V3)

@@ -1,5 +1,39 @@
 # 进度日志
 
+## Session 31 — 2026-07-08 Agent Resume Hardening
+
+**功能**: Agent Resume Hardening — benchmark verifiers、trace/reporter、patch benchmark
+**状态**: ✅ 完成 (Codex PASS)
+**Git**: `22692da` on `lcl`
+
+### 做了什么
+
+1. **Benchmark Verifier Hardening** — 修复 3 个 critical 漏洞，no-op baseline: 20% → 0%
+2. **Trace/Reporter Enhancement** — 20+ 字段，permission telemetry 全路径覆盖
+3. **Patch/File-Edit Benchmark** — 15-task 原语级 benchmark，15/15 (100%)
+4. **3 轮 Codex Review** — 修复 verifier 路径回归、fixture_dir、deny 计数
+
+### 简历可写指标
+
+| 指标 | 值 |
+|------|-----|
+| No-op baseline false positive 修复 | 20% → 0% |
+| Patch edit/write 原语可靠性 | 100% (15/15) |
+| Permission telemetry 覆盖 | deny/ask/allow 全路径 + 4 种 deny 原因 |
+| Tool trace 字段 | 20+ fields/event |
+
+### 文件清单
+
+- `benchmarks/coding_tasks_v2.json` — 硬化 benchmark
+- `benchmarks/patch_tasks.json` — 原语级 patch benchmark
+- `benchmarks/verifiers/` — 独立 verifier 脚本
+- `scripts/run_noop_baseline.py` — no-op baseline runner
+- `scripts/run_patch_benchmark.py` — patch benchmark runner
+- `tests/test_noop_baseline.py`, `test_patch_benchmark.py`, `test_reporter_enhanced.py`
+- `docs/test-reports/agent_resume_hardening_report.md` — 完整验收报告
+
+---
+
 ## Session 30 — 2026-07-06 V4-A 高难度任务实验
 
 **功能**: V4-A 高难度任务实验
