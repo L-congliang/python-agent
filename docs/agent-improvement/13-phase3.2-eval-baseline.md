@@ -16,7 +16,7 @@
 - ✅ 输出格式：`{run_id}.json` + `{run_id}.md`
 - ✅ 测试覆盖：`tests/test_evaluation_baseline_runner.py`（11 passed）
 - ✅ Schema 稳定：memory/recovery/permission 指标字段已定义
-- ✅ Memory baseline 已接入真实实验（FakeModelClient）
+- ⚠️ Memory baseline 默认走 `_run_mock_task()` 路径，不是真实 agent 执行（详见下方说明）
 
 ### 未完成
 - ⚠️ Recovery baseline：当前返回 placeholder（not_measured），需要接入真实实验
@@ -26,11 +26,11 @@
 
 | 类别 | 状态 | 说明 |
 |------|------|------|
-| Memory | ✅ 真实实验 | 调用 MemoryExperiment(use_real_model=False)，使用 FakeModelClient |
+| Memory | ⚠️ mock 路径 | `MemoryExperiment(use_real_model=False)` 走 `_run_mock_task()`，直接返回常量，不是真实 agent 执行 |
 | Recovery | ⚠️ placeholder | 返回 not_measured，需要接入真实实验 |
 | Permission | ⚠️ placeholder | 返回 not_measured，需要接入真实实验 |
 
-**注意：当前 memory baseline 数据来自 FakeModelClient，不是真实远程模型。**
+**⚠️ 关键局限：当前 memory baseline 默认走 `_run_mock_task()` 路径（`memory_experiment.py:1050`），直接返回 `correct=True, tool_calls=2, duration=0.5`。这不是真实 agent 行为，任何基于此的"结论"都是 mock 产物。Phase 3.2E 将解决此问题。**
 
 ## 4. 测试覆盖
 
@@ -71,14 +71,22 @@ uv run pytest tests -q
   "timestamp": "2026-07-07T15:33:40",
   "memory": {
     "memory_on": {
-      "correct_rate": 0.85,
-      "memory_hit_rate": 0.70,
-      "avg_tool_calls": 4.5
+      "correct_rate": 1.0,
+      "memory_hit_rate": 1.0,
+      "memory_dependent_success_rate": 1.0,
+      "target_reread_rate": 0.0,
+      "answer_without_reread_rate": 1.0,
+      "avg_tool_calls": 2.0,
+      "avg_duration": 0.5
     },
     "memory_off": {
-      "correct_rate": 0.75,
+      "correct_rate": 1.0,
       "memory_hit_rate": 0.0,
-      "avg_tool_calls": 6.2
+      "memory_dependent_success_rate": 1.0,
+      "target_reread_rate": 0.0,
+      "answer_without_reread_rate": 0.0,
+      "avg_tool_calls": 2.0,
+      "avg_duration": 0.5
     }
   },
   "recovery": {
@@ -94,10 +102,13 @@ uv run pytest tests -q
 }
 ```
 
-**注意：**
-- memory 指标来自 FakeModelClient 实验，不是真实远程模型
-- recovery 和 permission 指标是 placeholder（not_measured）
-- Phase 3.2B+ 会替换为真实实验数据
+**⚠️ 当前 baseline 的根本局限：**
+- 默认走 `_run_mock_task()` 路径（`memory_experiment.py:1050`），直接返回 `correct=True, tool_calls=2, duration=0.5`
+- memory_hits 按配置机械赋值（memory_on=1, memory_off=0），不是真实行为
+- **correct_rate 饱和（都是 1.0），无法区分 memory_on / memory_off**
+- memory_hit_rate 的差异是 mock 逻辑决定的，不是真实 agent 行为
+- 这些数值代表"链路跑通"，不代表"Memory v2 有效"
+- Phase 3.2E 将解决此问题：去 mock 化 + 敏感任务重构
 
 ### Markdown 结构
 
@@ -109,10 +120,13 @@ uv run pytest tests -q
 
 ## Memory Baseline
 
-| Metric | memory_on | memory_off | Delta |
-|--------|-----------|------------|-------|
-| correct_rate | 0.85 | 0.75 | +0.10 |
-| avg_tool_calls | 4.50 | 6.20 | -1.70 |
+| Metric | memory_on | memory_off | Delta | 说明 |
+|--------|-----------|------------|-------|------|
+| correct_rate | 1.0 | 1.0 | 0.0 | 饱和，当前任务集无法区分 |
+| memory_hit_rate | 1.0 | 0.0 | +1.0 | mock 逻辑赋值，非真实行为 |
+| memory_dependent_success_rate | 1.0 | 1.0 | 0.0 | 饱和 |
+| target_reread_rate | 0.0 | 0.0 | 0.0 | mock 路径无真实 tool 行为 |
+| avg_tool_calls | 2.0 | 2.0 | 0.0 | mock 固定返回 2 |
 
 ## Recovery Baseline
 
@@ -130,10 +144,11 @@ uv run pytest tests -q
 
 ## Notes
 
-- Memory baseline uses FakeModelClient (no real API required)
-- Recovery and Permission baselines are placeholder (not_measured)
-- Phase 3.2A goal: establish runner, schema, and output format
-- Phase 3.2B+ will replace placeholder with real experiment data
+- Memory baseline 默认走 `_run_mock_task()` 路径，不是真实 agent 执行
+- mock 路径直接返回 correct=True, tool_calls=2, duration=0.5
+- memory_hit_rate 差异来自 mock 逻辑的机械赋值，不是真实行为
+- Recovery 和 Permission baselines 是 placeholder（not_measured）
+- Phase 3.2E 将去 mock 化并重构敏感任务
 ```
 
 ## 7. Tests vs Evaluation 边界

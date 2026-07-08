@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import json
 import logging
 import os
@@ -26,6 +28,9 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("agent.evaluation.memory_experiment")
+
+if TYPE_CHECKING:
+    from agent.reflection.types import ReflectionConfig
 
 
 # ============================================================
@@ -75,6 +80,9 @@ class MemoryTask:
     no_extra_changes: bool = False
     fixture_dir: str = ""
     allow_reread: bool = False
+    retry_script: list[list[dict[str, Any]]] | None = None
+    retry_branches: dict[str, list[list[dict[str, Any]]]] | None = None
+    default_retry_branch: str = "use_memory_answer"
 
 
 @dataclass
@@ -95,16 +103,21 @@ class MemoryConfig:
 class MemoryMetrics:
     """记忆指标
 
+    指标分级（Phase 3.2E 调整）：
+    - 主效果指标：avg_tool_calls, target_reread_rate, answer_without_reread_rate, memory_dependent_success_rate
+    - 辅助 guardrail：correct_rate（不能因追求效率牺牲正确性）
+    - 诊断指标：memory_hit_rate（只用于诊断，不作为结论依据）
+
     Attributes:
         repeated_reads: 重复读取次数
-        correct_rate: 正确率
+        correct_rate: 正确率（辅助 guardrail）
         memory_hit_rate: 记忆命中率（诊断指标，不作为主效果指标）
-        memory_dependent_success_rate: 记忆依赖成功率（L3/L4 任务的正确率）
-        target_reread_rate: 目标文件重读率（主任务阶段重读目标文件的比例）
-        answer_without_reread_rate: 无重读回答率（setup_turns 后不重读就能答对的比例）
+        memory_dependent_success_rate: 记忆依赖成功率（主效果指标：L3/L4 任务正确率）
+        target_reread_rate: 目标文件重读率（主效果指标：主任务阶段重读目标文件的比例）
+        answer_without_reread_rate: 无重读回答率（主效果指标：setup_turns 后不重读就能答对的比例）
         total_tool_calls: 总工具调用次数
         total_tokens: 总 token 数
-        avg_tool_calls: 平均工具调用次数
+        avg_tool_calls: 平均工具调用次数（主效果指标）
         avg_duration: 平均耗时
         eligible_memory_tasks: 可判定 memory_hit 的任务数
         l3l4_tasks: L3/L4 任务数量
@@ -123,6 +136,11 @@ class MemoryMetrics:
     eligible_memory_tasks: int = 0
     l3l4_tasks: int = 0
     l3l4_correct: int = 0
+    # reflection 指标（Phase 3.2C）
+    reflection_trigger_rate: float = 0.0  # 触发 reflection 的任务比例
+    reflection_retry_success_rate: float = 0.0  # retry 后结果正确的比例（不是"reflection 帮助率"）
+    reflection_avg_extra_tool_calls: float = 0.0  # reflection 引入的额外 tool calls
+    reflection_helped_tasks: int = 0  # reflection 确实带来改善的任务数
 
 
 @dataclass
@@ -574,6 +592,87 @@ MEMORY_TASKS = [
         ],
         forbidden_reads=["api_config.py"],
     ),
+
+    # --- L3: memory_sensitive — memory_on 跳过 reread，memory_off 必须 reread ---
+    # 这些任务专门设计为 memory 敏感：
+    # memory_on: 从 setup_turns 记住信息，主任务直接回答（0 tool_calls）
+    # memory_off: 需要 reread 文件才能回答（1 tool_call）
+    MemoryTask(
+        task_id="mem_sensitive_api_url",
+        category="memory_sensitive",
+        dependency_level="L3",
+        prompt="What is the API_URL value from the project config? "
+               "Answer with just the URL, no explanation.",
+        setup_turns=[
+            "Read api_config.py and tell me the API_URL value.",
+        ],
+        fixture_dir=".",
+        target_files=["api_config.py"],
+        verifier="contains_text",
+        expected_substrings=["https://api.production.internal/v2"],
+        # retry_branches: 多路径 retry（Phase 3.2F prompt-sensitive）
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "https://api.production.internal/v2"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "call_1", "name": "read",
+                  "input": {"file_path": "api_config.py"}}],
+                [{"type": "text", "text": "https://api.production.internal/v2"}],
+            ],
+        },
+        default_retry_branch="use_memory_answer",
+    ),
+    MemoryTask(
+        task_id="mem_sensitive_db_host",
+        category="memory_sensitive",
+        dependency_level="L3",
+        prompt="What is the DB_HOST value from database.py? "
+               "Answer with just the hostname.",
+        setup_turns=[
+            "Read database.py and tell me the DB_HOST value.",
+        ],
+        fixture_dir=".",
+        target_files=["database.py"],
+        verifier="contains_text",
+        expected_substrings=["db.prod.internal"],
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "db.prod.internal"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "call_1", "name": "read",
+                  "input": {"file_path": "database.py"}}],
+                [{"type": "text", "text": "db.prod.internal"}],
+            ],
+        },
+        default_retry_branch="use_memory_answer",
+    ),
+    MemoryTask(
+        task_id="mem_sensitive_cache_port",
+        category="memory_sensitive",
+        dependency_level="L3",
+        prompt="What is the CACHE_PORT value from cache.py? "
+               "Answer with just the port number.",
+        setup_turns=[
+            "Read cache.py and tell me the CACHE_PORT value.",
+        ],
+        fixture_dir=".",
+        target_files=["cache.py"],
+        verifier="contains_text",
+        expected_substrings=["6379"],
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "6379"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "call_1", "name": "read",
+                  "input": {"file_path": "cache.py"}}],
+                [{"type": "text", "text": "6379"}],
+            ],
+        },
+        default_retry_branch="use_memory_answer",
+    ),
 ]
 
 
@@ -630,6 +729,54 @@ def _create_real_agent_loop(
 
     loop_config = LoopConfig(
         model=config.model,
+        max_turns=max_turns,
+        system_prompt="You are a helpful coding assistant. Answer concisely.",
+        memory_enabled=memory_enabled,
+        workspace_root=workspace_root,
+    )
+
+    return AgentLoop(client, registry, config=loop_config)
+
+
+def _create_agent_loop_with_client(
+    client: Any,
+    memory_enabled: bool = True,
+    workspace_root: str | None = None,
+    max_turns: int = 15,
+):
+    """用指定 client 创建 AgentLoop（支持 FakeModelClient / ScriptedModelClient）
+
+    与 _create_real_agent_loop 的区别：不创建 MimoClient，直接用传入的 client。
+    不需要 MIMO_API_KEY。
+
+    Args:
+        client: 模型客户端（FakeModelClient / ScriptedModelClient / MimoClient）
+        memory_enabled: 是否启用记忆系统
+        workspace_root: 工作区根目录
+        max_turns: 最大轮次
+
+    Returns:
+        AgentLoop 实例
+    """
+    from agent.core.loop import AgentLoop, LoopConfig
+    from agent.tools.registry import ToolRegistry
+    from agent.tools.bash import bash_tool
+    from agent.tools.file_read import file_read_tool
+    from agent.tools.file_write import file_write_tool
+    from agent.tools.file_edit import file_edit_tool
+    from agent.tools.grep import grep_tool
+    from agent.tools.glob import glob_tool
+
+    registry = ToolRegistry()
+    registry.register(bash_tool)
+    registry.register(file_read_tool)
+    registry.register(file_write_tool)
+    registry.register(file_edit_tool)
+    registry.register(grep_tool)
+    registry.register(glob_tool)
+
+    loop_config = LoopConfig(
+        model="scripted-eval",
         max_turns=max_turns,
         system_prompt="You are a helpful coding assistant. Answer concisely.",
         memory_enabled=memory_enabled,
@@ -809,7 +956,8 @@ def _count_repeated_reads(
 ) -> int:
     """统计重复读取次数
 
-    定义：同一任务内，对同一 resolved_path 的第 2 次及以后成功 read，计为 repeated_read。
+    定义：同一 loop 内，对同一 resolved_path 的第 2 次及以后成功 read，计为 repeated_read。
+    注意：这与"setup 后是否 reread 目标文件"是不同的语义，后者用 _check_target_reread。
 
     Args:
         tool_history: 工具执行历史
@@ -896,6 +1044,49 @@ def _compute_memory_hit(
     return 1 if len(main_reads) == 0 else 0
 
 
+def _check_target_reread(
+    task: MemoryTask,
+    tool_history: list[dict[str, Any]],
+    workspace_root: str,
+) -> bool:
+    """检查主任务阶段是否读取了目标文件（setup 后 reread 语义）
+
+    与 _count_repeated_reads 的区别：
+    - _count_repeated_reads: 同一 loop 内第 2 次+ 读取
+    - _check_target_reread: 主任务阶段是否读了目标文件（不管第几次）
+
+    用于 target_reread_rate 和 answer_without_reread_rate 的统计。
+
+    Args:
+        task: 任务定义
+        tool_history: 主任务阶段的工具执行历史
+        workspace_root: 工作区根目录
+
+    Returns:
+        True if 主任务阶段读取了任何目标文件
+    """
+    if not task.target_files:
+        return False
+
+    target_abs = set()
+    for f in task.target_files:
+        target_abs.add(os.path.normpath(os.path.join(workspace_root, f)))
+
+    for entry in tool_history:
+        if entry.get("tool_name") != "read":
+            continue
+        if entry.get("is_error"):
+            continue
+        resolved = entry.get("resolved_path", "")
+        if not resolved:
+            continue
+        resolved = os.path.normpath(resolved)
+        if resolved in target_abs:
+            return True
+
+    return False
+
+
 # ============================================================
 # 实验主类
 # ============================================================
@@ -935,11 +1126,16 @@ class MemoryExperiment:
             MemoryConfig(name="memory_irrelevant", use_memory=True, use_irrelevant_memory=True),
         ]
 
-    def run(self, tasks: list[MemoryTask] | None = None) -> list[MemoryAblationResult]:
+    def run(
+        self,
+        tasks: list[MemoryTask] | None = None,
+        reflection_config: ReflectionConfig | None = None,
+    ) -> list[MemoryAblationResult]:
         """运行实验
 
         Args:
             tasks: 测试任务列表，默认使用 MEMORY_TASKS
+            reflection_config: reflection 配置（None = 不启用 reflection）
 
         Returns:
             各配置的实验结果
@@ -950,7 +1146,7 @@ class MemoryExperiment:
         results = []
         for i, config in enumerate(self._configs):
             logger.info("Running config: %s", config.name)
-            result = self._run_single_config(config, tasks)
+            result = self._run_single_config(config, tasks, reflection_config)
             results.append(result)
 
             # 配置间延迟（从 15s 提升到 45s）
@@ -963,6 +1159,7 @@ class MemoryExperiment:
         self,
         config: MemoryConfig,
         tasks: list[MemoryTask],
+        reflection_config: ReflectionConfig | None = None,
     ) -> MemoryAblationResult:
         """运行单个配置"""
         start_time = time.time()
@@ -979,10 +1176,16 @@ class MemoryExperiment:
         l3l4_correct = 0
         target_reread_count = 0
         answer_without_reread_count = 0
+        tasks_with_setup = 0  # 有 setup_turns 的任务数（target_reread_rate 的分母）
+        # reflection 指标统计
+        reflection_triggered_count = 0
+        reflection_success_count = 0
+        reflection_extra_tool_calls = 0
+        reflection_helped_count = 0  # reflection 确实带来改善的任务数
 
         for i, task in enumerate(tasks):
             logger.info("  Running task: %s", task.task_id)
-            result = self._run_single_task(config, task)
+            result = self._run_single_task(config, task, reflection_config)
             task_results.append(result)
 
             # 统计异常任务
@@ -1006,13 +1209,39 @@ class MemoryExperiment:
                 if result.get("correct", False):
                     l3l4_correct += 1
 
-            # 统计目标文件重读率
-            if result.get("repeated_reads", 0) > 0:
-                target_reread_count += 1
+            # 统计目标文件重读率（有 setup_turns 的任务中，主任务阶段读了目标文件的比例）
+            if task.setup_turns:
+                tasks_with_setup += 1
+                if result.get("read_target_after_setup", False):
+                    target_reread_count += 1
 
-            # 统计无重读回答率（setup_turns 后不重读就能答对）
-            if task.setup_turns and result.get("correct", False) and result.get("repeated_reads", 0) == 0:
+            # 统计无重读回答率（有 setup_turns + 正确 + 主任务没再读目标文件）
+            if task.setup_turns and result.get("correct", False) and not result.get("read_target_after_setup", False):
                 answer_without_reread_count += 1
+
+            # 统计 reflection 指标
+            if result.get("reflection_triggered", False):
+                reflection_triggered_count += 1
+                if result.get("correct", False):
+                    reflection_success_count += 1
+                # 额外 tool calls = total - first_attempt
+                first_tools = result.get("first_attempt_tool_calls", 0)
+                total_tools = result.get("tool_calls", 0)
+                reflection_extra_tool_calls += max(0, total_tools - first_tools)
+                # reflection 帮助判定：
+                # first attempt 的状态
+                first_correct = result.get("first_attempt_correct", False)
+                first_reread = result.get("first_attempt_read_target", False)
+                # retry 后的状态（result 的 read_target_after_setup 已是 retry 后的值）
+                retry_correct = result.get("correct", False)
+                retry_reread = result.get("read_target_after_setup", False)
+                helped = False
+                if not first_correct and retry_correct:
+                    helped = True  # 从错变对
+                if first_reread and not retry_reread:
+                    helped = True  # 从 reread 变不 reread
+                if helped:
+                    reflection_helped_count += 1
 
             # 任务间延迟，避免 429（从 8s 提升到 15s）
             if i < len(tasks) - 1 and self._use_real_model:
@@ -1023,8 +1252,14 @@ class MemoryExperiment:
 
         # 计算新指标
         memory_dependent_success_rate = l3l4_correct / l3l4_tasks if l3l4_tasks > 0 else 0.0
-        target_reread_rate = target_reread_count / n
-        answer_without_reread_rate = answer_without_reread_count / eligible_memory_tasks if eligible_memory_tasks > 0 else 0.0
+        # target_reread_rate: 分母用有 setup_turns 的任务数
+        target_reread_rate = target_reread_count / tasks_with_setup if tasks_with_setup > 0 else 0.0
+        # answer_without_reread_rate: 分母也用有 setup_turns 的任务数
+        answer_without_reread_rate = answer_without_reread_count / tasks_with_setup if tasks_with_setup > 0 else 0.0
+        # reflection 指标
+        reflection_trigger_rate = reflection_triggered_count / n if n > 0 else 0.0
+        reflection_retry_success_rate = reflection_success_count / reflection_triggered_count if reflection_triggered_count > 0 else 0.0
+        reflection_avg_extra_tool_calls = reflection_extra_tool_calls / reflection_triggered_count if reflection_triggered_count > 0 else 0.0
 
         metrics = MemoryMetrics(
             repeated_reads=total_repeated_reads,
@@ -1039,6 +1274,10 @@ class MemoryExperiment:
             eligible_memory_tasks=eligible_memory_tasks,
             l3l4_tasks=l3l4_tasks,
             l3l4_correct=l3l4_correct,
+            reflection_trigger_rate=reflection_trigger_rate,
+            reflection_retry_success_rate=reflection_retry_success_rate,
+            reflection_avg_extra_tool_calls=reflection_avg_extra_tool_calls,
+            reflection_helped_tasks=reflection_helped_count,
         )
 
         # config 级异常判定：有异常任务的 config 不进正式统计
@@ -1057,10 +1296,16 @@ class MemoryExperiment:
         self,
         config: MemoryConfig,
         task: MemoryTask,
+        reflection_config: ReflectionConfig | None = None,
     ) -> dict[str, Any]:
-        """运行单个任务"""
+        """运行单个任务
+
+        use_real_model=True: 用真实 MimoClient 驱动 AgentLoop
+        use_real_model=False: 用 ScriptedModelClient 驱动真实 AgentLoop
+            （替代原来的 _run_mock_task 常量返回路径）
+        """
         if not self._use_real_model:
-            return self._run_mock_task(config, task)
+            return self._run_scripted_task(config, task, reflection_config)
 
         return self._run_real_task(config, task)
 
@@ -1069,16 +1314,302 @@ class MemoryExperiment:
         config: MemoryConfig,
         task: MemoryTask,
     ) -> dict[str, Any]:
-        """模拟运行（用于框架测试）"""
+        """模拟运行（用于框架测试，保留向后兼容）"""
         return {
             "task_id": task.task_id,
             "category": task.category,
             "correct": True,
             "repeated_reads": 0,
             "memory_hits": 1 if (config.use_memory and task.setup_turns) else (-1 if not task.setup_turns else 0),
+            "read_target_after_setup": False,
             "tool_calls": 2,
             "duration": 0.5,
         }
+
+    def _build_default_script(
+        self,
+        task: MemoryTask,
+        workspace_root: str,
+        use_memory: bool = True,
+    ) -> list[list[dict[str, Any]]]:
+        """为 ScriptedModelClient 构建默认行为脚本。
+
+        策略：
+        - 有 setup_turns 的任务：如果 use_memory=True，跳过 reread（用记忆回答）；
+          如果 use_memory=False，reread 目标文件（需要重新获取信息）。
+        - 无 setup_turns 的任务：始终读取第一个 target_file。
+
+        这让 memory_on 和 memory_off 在 tool_calls / memory_hit 上产生差异。
+
+        Args:
+            task: 任务定义
+            workspace_root: 工作区根目录
+            use_memory: 是否启用记忆（影响脚本行为）
+
+        Returns:
+            轮次列表，每轮是 content_blocks 列表
+        """
+        rounds: list[list[dict[str, Any]]] = []
+
+        # 判断是否应该跳过 reread（memory 生效时）
+        should_skip_reread = use_memory and task.setup_turns
+
+        if task.target_files and not should_skip_reread:
+            # 读取第一个目标文件（memory_off 或无 setup_turns）
+            target = task.target_files[0]
+            file_path = str(Path(workspace_root) / target)
+            rounds.append([
+                {
+                    "type": "tool_use",
+                    "id": "call_read_1",
+                    "name": "read",
+                    "input": {"file_path": file_path},
+                }
+            ])
+
+        # 最终回复
+        if task.expected_substrings:
+            default_answer = " ".join(task.expected_substrings[:3])
+        else:
+            default_answer = "Task completed based on file analysis."
+
+        rounds.append([{"type": "text", "text": default_answer}])
+
+        return rounds
+
+    def _run_scripted_task(
+        self,
+        config: MemoryConfig,
+        task: MemoryTask,
+        reflection_config: ReflectionConfig | None = None,
+    ) -> dict[str, Any]:
+        """用 ScriptedModelClient + 真实 AgentLoop 运行任务。
+
+        替代原来的 _run_mock_task() 常量返回路径。
+        真实执行 tool（file_read 等），真实测量 tool_calls / duration。
+
+        设计要点：
+        - setup_turns 用独立的 FakeModelClient（简单文本回复，不消耗 script rounds）
+        - 主任务用 ScriptedModelClient（按 script 执行 tool calls）
+        - 两个 phase 的 client 分开，避免 setup 消耗主任务的 script rounds
+        - 如果 reflection_config 启用且 task 有 retry_script，支持 one-shot reflection retry
+        """
+        from agent.evaluation.fake_client import FakeModelClient, ScriptedModelClient
+
+        start_time = time.time()
+        workspace_root = self._prepare_workspace(task)
+
+        try:
+            # --- Phase 1: setup_turns 用独立 FakeModelClient ---
+            if task.setup_turns:
+                setup_client = FakeModelClient(
+                    ["OK, noted."] * len(task.setup_turns)
+                )
+                setup_loop = _create_agent_loop_with_client(
+                    client=setup_client,
+                    memory_enabled=config.use_memory,
+                    workspace_root=workspace_root,
+                    max_turns=self._max_turns,
+                )
+
+                # 注入无关记忆（只在 setup 阶段注入一次）
+                if config.use_irrelevant_memory:
+                    setup_loop.memory.set_task("这是一个无关的任务：处理用户登录页面的 CSS 样式")
+                    for i in range(5):
+                        setup_loop.memory.append_note(
+                            f"无关笔记 {i}: 用户要求修改按钮颜色为蓝色",
+                            tags=["noise"],
+                        )
+
+                for setup_prompt in task.setup_turns:
+                    setup_loop.run(setup_prompt)
+
+                # 把 setup 阶段的 memory 状态转移到主任务 loop
+                # （因为 memory 是 per-loop 的，需要手动同步）
+                memory_state = None
+                if config.use_memory:
+                    memory_state = {
+                        "notes": list(setup_loop.memory._episodic._notes)
+                            if hasattr(setup_loop.memory, '_episodic') else [],
+                        "task": setup_loop.memory._task
+                            if hasattr(setup_loop.memory, '_task') else "",
+                    }
+
+            # --- Phase 2: 主任务用 ScriptedModelClient ---
+            script = self._build_default_script(
+                task, workspace_root, use_memory=config.use_memory,
+            )
+            main_client = ScriptedModelClient(script)
+
+            main_loop = _create_agent_loop_with_client(
+                client=main_client,
+                memory_enabled=config.use_memory,
+                workspace_root=workspace_root,
+                max_turns=self._max_turns,
+            )
+
+            # 注入无关记忆（如果 setup 阶段没有注入）
+            if config.use_irrelevant_memory and not task.setup_turns:
+                main_loop.memory.set_task("这是一个无关的任务：处理用户登录页面的 CSS 样式")
+                for i in range(5):
+                    main_loop.memory.append_note(
+                        f"无关笔记 {i}: 用户要求修改按钮颜色为蓝色",
+                        tags=["noise"],
+                    )
+
+            # 同步 memory 状态
+            if config.use_memory and task.setup_turns and memory_state:
+                main_loop.memory._task = memory_state["task"]
+                if hasattr(main_loop.memory, '_episodic') and memory_state["notes"]:
+                    main_loop.memory._episodic._notes = memory_state["notes"]
+
+            # 跑主任务
+            result_text = main_loop.run(task.prompt)
+
+            # 从 tool_history 统计
+            tool_calls = len(main_loop.tool_history)
+            repeated_reads = _count_repeated_reads(
+                main_loop.tool_history, task.target_files, workspace_root,
+            )
+            memory_hits = _compute_memory_hit(
+                task, main_loop.tool_history, workspace_root,
+            )
+            read_target_after_setup = _check_target_reread(
+                task, main_loop.tool_history, workspace_root,
+            )
+            correct = _verify_task_result(
+                task, result_text, workspace_root, main_loop.tool_history,
+            )
+
+            duration = time.time() - start_time
+
+            # 构建 first attempt 结果
+            first_result = {
+                "task_id": task.task_id,
+                "category": task.category,
+                "correct": correct,
+                "repeated_reads": repeated_reads,
+                "memory_hits": memory_hits,
+                "read_target_after_setup": read_target_after_setup,
+                "tool_calls": tool_calls,
+                "duration": duration,
+                "result_preview": result_text[:200] if result_text else "",
+                "failed_reason": "",
+                "is_abnormal": False,
+                "abnormal_reason": "",
+            }
+
+            # --- Phase 3: Reflection Retry（如果启用且有 retry_script 或 retry_branches）---
+            has_retry = task.retry_script is not None or task.retry_branches is not None
+            if reflection_config and reflection_config.enabled and has_retry:
+                from agent.reflection.policy import ReflectionPolicy
+                from agent.reflection.builder import ReflectionBuilder
+                from agent.reflection.types import ReflectionSummary
+
+                policy = ReflectionPolicy(reflection_config)
+                decision = policy.should_reflect(task, first_result)
+
+                if decision.should_reflect:
+                    # 构造 ReflectionPlan（结构化输出）
+                    summary = ReflectionSummary(
+                        task_id=task.task_id,
+                        original_prompt=task.prompt,
+                        first_attempt_correct=correct,
+                        first_attempt_answer_preview=result_text[:200] if result_text else "",
+                        tool_calls=tool_calls,
+                        read_target_after_setup=read_target_after_setup,
+                        memory_hit=memory_hits,
+                        failure_reason=decision.reason,
+                    )
+                    builder = ReflectionBuilder(reflection_config)
+                    plan = builder.build(summary)
+
+                    # 选择 retry client：
+                    # 有 retry_branches → PromptAwareScriptedModelClient（根据 plan.retry_strategy 选 branch）
+                    # 只有 retry_script → ScriptedModelClient（固定 script）
+                    if task.retry_branches:
+                        from agent.evaluation.fake_client import PromptAwareScriptedModelClient
+                        retry_client = PromptAwareScriptedModelClient(
+                            branches=task.retry_branches,
+                            default_branch=task.default_retry_branch,
+                        )
+                    else:
+                        retry_client = ScriptedModelClient(task.retry_script)
+                    retry_loop = _create_agent_loop_with_client(
+                        client=retry_client,
+                        memory_enabled=config.use_memory,
+                        workspace_root=workspace_root,
+                        max_turns=self._max_turns,
+                    )
+
+                    # 同步 memory 状态
+                    if config.use_memory and task.setup_turns and memory_state:
+                        retry_loop.memory._task = memory_state["task"]
+                        if hasattr(retry_loop.memory, '_episodic') and memory_state["notes"]:
+                            retry_loop.memory._episodic._notes = memory_state["notes"]
+
+                    retry_text = retry_loop.run(plan.prompt)
+                    retry_tool_calls = len(retry_loop.tool_history)
+                    retry_correct = _verify_task_result(
+                        task, retry_text, workspace_root, retry_loop.tool_history,
+                    )
+                    retry_reread = _check_target_reread(
+                        task, retry_loop.tool_history, workspace_root,
+                    )
+
+                    # 返回 retry 结果，附带 reflection 元数据
+                    duration = time.time() - start_time
+                    return {
+                        "task_id": task.task_id,
+                        "category": task.category,
+                        "correct": retry_correct,
+                        "repeated_reads": _count_repeated_reads(
+                            retry_loop.tool_history, task.target_files, workspace_root,
+                        ),
+                        "memory_hits": _compute_memory_hit(
+                            task, retry_loop.tool_history, workspace_root,
+                        ),
+                        "read_target_after_setup": retry_reread,
+                        "tool_calls": tool_calls + retry_tool_calls,
+                        "duration": duration,
+                        "result_preview": retry_text[:200] if retry_text else "",
+                        "failed_reason": "",
+                        "is_abnormal": False,
+                        "abnormal_reason": "",
+                        # reflection 元数据
+                        "reflection_triggered": True,
+                        "reflection_reason": decision.reason,
+                        "reflection_trigger_type": decision.trigger_type,
+                        "first_attempt_correct": correct,
+                        "first_attempt_tool_calls": tool_calls,
+                        "first_attempt_read_target": read_target_after_setup,
+                    }
+
+            # 无 reflection 或不触发
+            first_result["reflection_triggered"] = False
+            first_result["reflection_reason"] = ""
+            first_result["reflection_trigger_type"] = "none"
+            first_result["first_attempt_correct"] = correct
+            first_result["first_attempt_tool_calls"] = tool_calls
+            return first_result
+
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error("Scripted task %s failed: %s", task.task_id, e)
+            return {
+                "task_id": task.task_id,
+                "category": task.category,
+                "correct": False,
+                "repeated_reads": 0,
+                "memory_hits": -1,
+                "read_target_after_setup": False,
+                "tool_calls": 0,
+                "duration": duration,
+                "result_preview": "",
+                "failed_reason": "scripted_error",
+                "is_abnormal": False,
+                "abnormal_reason": str(e),
+            }
 
     def _run_real_task(
         self,
@@ -1120,6 +1651,7 @@ class MemoryExperiment:
                         "correct": False,
                         "repeated_reads": 0,
                         "memory_hits": -1,
+                        "read_target_after_setup": False,
                         "tool_calls": 0,
                         "duration": time.time() - start_time,
                         "result_preview": "",
@@ -1174,6 +1706,9 @@ class MemoryExperiment:
             memory_hits = _compute_memory_hit(
                 task, loop.tool_history, workspace_root,
             )
+            read_target_after_setup = _check_target_reread(
+                task, loop.tool_history, workspace_root,
+            )
             correct = _verify_task_result(task, result_text, workspace_root, loop.tool_history)
 
             # 记录 ContextMetadata 用于诊断
@@ -1222,6 +1757,7 @@ class MemoryExperiment:
             "correct": correct,
             "repeated_reads": repeated_reads,
             "memory_hits": memory_hits,
+            "read_target_after_setup": read_target_after_setup,
             "tool_calls": tool_calls,
             "duration": duration,
             "result_preview": result_text[:200] if result_text else "",
@@ -1312,6 +1848,7 @@ class MemoryExperiment:
             "cross_file_dep": "跨文件依赖修改，验证 file_changed",
             "multi_round_edit": "多轮连续改动，验证 multi_file_changed",
             "noise": "噪声干扰与错误纠偏，验证抗混淆能力",
+            "memory_sensitive": "memory 敏感任务，memory_on 跳过 reread，memory_off 必须 reread",
         }
         for cat, count in categories.items():
             report.append(f"| {cat} | {count} | {cat_desc.get(cat, '')} |")

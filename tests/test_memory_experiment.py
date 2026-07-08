@@ -68,8 +68,8 @@ class TestMemoryTasks:
     """测试任务数据集"""
 
     def test_has_tasks(self) -> None:
-        """至少有 14 个任务"""
-        assert len(MEMORY_TASKS) >= 14
+        """至少有 24 个任务"""
+        assert len(MEMORY_TASKS) >= 24
 
     def test_all_have_target_files(self) -> None:
         """所有任务都有 target_files"""
@@ -85,7 +85,7 @@ class TestMemoryTasks:
         """需要 setup_turns 的任务类别必须有 setup_turns"""
         categories_needing_setup = {
             "history_reference", "cross_round_recall", "cross_file_dep",
-            "multi_round_edit", "noise",
+            "multi_round_edit", "noise", "memory_sensitive",
         }
         for task in MEMORY_TASKS:
             if task.category in categories_needing_setup:
@@ -110,6 +110,7 @@ class TestMemoryTasks:
         assert "cross_file_dep" in categories
         assert "multi_round_edit" in categories
         assert "noise" in categories
+        assert "memory_sensitive" in categories
 
     def test_cross_round_recall_eligible_for_memory_hit(self) -> None:
         """cross_round_recall 任务应有 setup_turns + target_files，可算 memory_hit"""

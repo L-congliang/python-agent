@@ -18,7 +18,7 @@
 
 ### 未完成
 - ⚠️ Recall 和 observation budget 精确对齐：当前只返回 top_k
-- ⚠️ 在 FakeModelClient 下未观察到 correct_rate 提升
+- ⚠️ 当前 baseline 默认走 `_run_mock_task()` 路径，不是真实 agent 执行，无法判断 Memory v2 是否真正有效（Phase 3.2E 解决）
 
 ## 3. Memory 分层
 
@@ -58,15 +58,20 @@ if query:
 
 | 指标 | memory_on | memory_off | Delta | 说明 |
 |------|-----------|------------|-------|------|
-| correct_rate | 1.0 | 1.0 | 0.0 | FakeModelClient 下未观察到提升 |
-| memory_hit_rate | 1.0 | 0.0 | +1.0 | 最明确的差异指标 |
-| avg_tool_calls | 2.0 | 2.0 | 0.0 | FakeModelClient 下未观察到差异 |
+| correct_rate | 1.0 | 1.0 | 0.0 | 饱和，当前任务集无法区分 |
+| memory_hit_rate | 1.0 | 0.0 | +1.0 | mock 逻辑赋值（memory_on=1, memory_off=0），非真实行为 |
+| avg_tool_calls | 2.0 | 2.0 | 0.0 | mock 固定返回 2，无真实 tool 行为 |
+
+**⚠️ 这组数据的根本局限：**
+- 默认 baseline 走 `_run_mock_task()` 路径（`memory_experiment.py:1050`），直接返回 `correct=True, tool_calls=2, duration=0.5`
+- memory_hit_rate 的差异是 mock 逻辑的机械赋值，不是真实 agent 行为
+- **这组数据代表"链路跑通"，不代表"Memory v2 有效"**
 
 **结论：**
 - ✅ Memory v2 已进入默认 recall 链路
-- ⚠️ 在 FakeModelClient 下尚未观察到 correct_rate 提升
-- ✅ 当前最明确的差异指标是 memory_hit_rate（memory_on 1.0 vs memory_off 0.0）
-- 后续需要更敏感的任务集或真实远程模型补充验证
+- ⚠️ 当前 baseline 走 mock 路径，无法判断 Memory v2 是否真正有效
+- ⚠️ memory_hit_rate 差异来自 mock 逻辑，不是真实行为证据
+- Phase 3.2E 将去 mock 化并重构敏感任务，才能回答"Memory v2 有没有用"
 
 ## 6. 测试覆盖
 
@@ -97,10 +102,13 @@ uv run pytest tests -q
 
 ## 8. 后续使用
 
-**Phase 3.2C（Reflection）可以：**
-- 对比 memory_on vs memory_v2 + reflection
-- 验证 reflection 是否提升了 memory_dependent_success_rate
+**Phase 3.2E（Benchmark Hardening）必须先做：**
+- 去 mock 化：让 baseline 走真实 agent loop（FakeModelClient 驱动）
+- 敏感任务重构：设计让 memory 真正必要的任务
+- 指标调整：主效果指标从 correct_rate 切换到效率指标
+- 只有完成 3.2E 后，才能可信地回答"Memory v2 有没有用"
 
-**需要更敏感的任务集或真实远程模型补充验证：**
-- 当前 FakeModelClient 是确定性的，correct_rate 都是 1.0
-- 需要真实远程模型才能看到真正的 memory 效果差异
+**Phase 3.2C（Reflection）依赖 3.2E 完成：**
+- 对比 baseline vs memory_v2 + reflection
+- 验证 reflection 是否提升了 memory_dependent_success_rate
+- 如果 3.2E 没做好，3.2C 做完后也无法判断 reflection 是否带来真实收益
