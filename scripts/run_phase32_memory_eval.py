@@ -106,17 +106,26 @@ def main() -> None:
         baseline_result = experiment._run_single_config(baseline_config_off, subset)
 
         # Group 2: Subset Scripted Retry（memory_off + 固定 retry_script）
-        # 用 retry_branches 的 default_branch 作为固定 script
+        # 关键：临时关闭 retry_branches，只保留 retry_script
+        # 这样 _run_scripted_task 会走 ScriptedModelClient（固定路径），
+        # 而不是 PromptAwareScriptedModelClient（prompt-sensitive 路径）
         print("Running Subset Scripted Retry (memory_off, fixed retry)...")
-        # 临时把 retry_branches 的 default_branch 转为 retry_script
+        saved_branches: dict[str, dict] = {}
         for t in subset:
+            saved_branches[t.task_id] = {
+                "retry_branches": t.retry_branches,
+                "retry_script": t.retry_script,
+            }
             if t.retry_branches and t.default_retry_branch in t.retry_branches:
                 t.retry_script = t.retry_branches[t.default_retry_branch]
+                t.retry_branches = None  # 关键：关闭 prompt-sensitive 路径
         scripted_config = MemoryConfig(name="subset_scripted_retry", use_memory=False)
         scripted_result = experiment._run_single_config(scripted_config, subset, reflection_config)
         # 恢复
         for t in subset:
-            t.retry_script = None
+            saved = saved_branches[t.task_id]
+            t.retry_branches = saved["retry_branches"]
+            t.retry_script = saved["retry_script"]
 
         # Group 3: Subset Prompt-Sensitive Retry（memory_off + prompt-sensitive）
         print("Running Subset Prompt-Sensitive Retry (memory_off, prompt-sensitive)...")
@@ -166,6 +175,12 @@ def main() -> None:
         "memory": {},
     }
 
+    # 三组模式：记录 task scope 和 delta
+    if args.three_group:
+        output["task_scope"] = "reflection_sensitive_subset"
+        output["subset_task_count"] = len(subset)
+        output["subset_task_ids"] = [t.task_id for t in subset]
+
     for r in results:
         m = r.metrics
         config_data = {
@@ -190,6 +205,32 @@ def main() -> None:
             config_data["reflection_avg_extra_tool_calls"] = m.reflection_avg_extra_tool_calls
             config_data["reflection_helped_tasks"] = m.reflection_helped_tasks
         output["memory"][r.config.name] = config_data
+
+    # 三组模式：写入 delta 指标
+    if args.three_group and len(results) >= 3:
+        b = results[0].metrics  # subset_baseline
+        s = results[1].metrics  # subset_scripted_retry
+        p = results[2].metrics  # subset_prompt_sensitive
+        output["comparison"] = {
+            "scripted_vs_baseline": {
+                "correct_delta": s.correct_rate - b.correct_rate,
+                "reread_delta": s.target_reread_rate - b.target_reread_rate,
+                "no_reread_delta": s.answer_without_reread_rate - b.answer_without_reread_rate,
+                "tools_delta": s.avg_tool_calls - b.avg_tool_calls,
+            },
+            "prompt_sensitive_vs_scripted": {
+                "correct_delta": p.correct_rate - s.correct_rate,
+                "reread_delta": p.target_reread_rate - s.target_reread_rate,
+                "no_reread_delta": p.answer_without_reread_rate - s.answer_without_reread_rate,
+                "tools_delta": p.avg_tool_calls - s.avg_tool_calls,
+            },
+            "prompt_sensitive_vs_baseline": {
+                "correct_delta": p.correct_rate - b.correct_rate,
+                "reread_delta": p.target_reread_rate - b.target_reread_rate,
+                "no_reread_delta": p.answer_without_reread_rate - b.answer_without_reread_rate,
+                "tools_delta": p.avg_tool_calls - b.avg_tool_calls,
+            },
+        }
 
     # 写 JSON
     json_path = output_dir / f"{run_id}.json"

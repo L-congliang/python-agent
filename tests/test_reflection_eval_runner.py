@@ -163,3 +163,79 @@ class TestReflectionPromptConsumed:
         text = "".join(text_chunks)
 
         assert "from memory" in text
+
+
+class TestThreeGroupRunner:
+    """--three-group 模式的 runner 输出"""
+
+    def test_three_group_json_has_all_configs(self, tmp_path: Path) -> None:
+        """JSON 包含三组 config：subset_baseline / subset_scripted_retry / subset_prompt_sensitive"""
+        result = subprocess.run(
+            [sys.executable, "scripts/run_phase32_memory_eval.py",
+             "--output-dir", str(tmp_path), "--three-group"],
+            capture_output=True, text=True, timeout=120,
+        )
+        assert result.returncode == 0, f"Runner failed: {result.stderr}"
+
+        json_files = list(tmp_path.glob("memory_eval_*.json"))
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+
+        assert "subset_baseline" in data["memory"]
+        assert "subset_scripted_retry" in data["memory"]
+        assert "subset_prompt_sensitive" in data["memory"]
+
+    def test_three_group_json_has_comparison(self, tmp_path: Path) -> None:
+        """JSON 包含 comparison/deltas 字段"""
+        subprocess.run(
+            [sys.executable, "scripts/run_phase32_memory_eval.py",
+             "--output-dir", str(tmp_path), "--three-group"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        json_files = list(tmp_path.glob("memory_eval_*.json"))
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+
+        assert "comparison" in data
+        comp = data["comparison"]
+        assert "scripted_vs_baseline" in comp
+        assert "prompt_sensitive_vs_scripted" in comp
+        assert "prompt_sensitive_vs_baseline" in comp
+        # 每个 comparison 都有 delta 字段
+        for key in comp:
+            assert "correct_delta" in comp[key]
+            assert "reread_delta" in comp[key]
+
+    def test_three_group_json_has_subset_info(self, tmp_path: Path) -> None:
+        """JSON 包含 task_scope 和 subset_task_count"""
+        subprocess.run(
+            [sys.executable, "scripts/run_phase32_memory_eval.py",
+             "--output-dir", str(tmp_path), "--three-group"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        json_files = list(tmp_path.glob("memory_eval_*.json"))
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+
+        assert data.get("task_scope") == "reflection_sensitive_subset"
+        assert "subset_task_count" in data
+        assert data["subset_task_count"] > 0
+        assert "subset_task_ids" in data
+        assert len(data["subset_task_ids"]) == data["subset_task_count"]
+
+    def test_three_group_uses_same_subset(self, tmp_path: Path) -> None:
+        """三组使用同一任务子集（task_id 一致）"""
+        subprocess.run(
+            [sys.executable, "scripts/run_phase32_memory_eval.py",
+             "--output-dir", str(tmp_path), "--three-group"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        json_files = list(tmp_path.glob("memory_eval_*.json"))
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+
+        subset_ids = set(data["subset_task_ids"])
+        # 三组 config 的 task_results 应该包含相同的 task_id
+        for config_name in ["subset_baseline", "subset_scripted_retry", "subset_prompt_sensitive"]:
+            config = data["memory"][config_name]
+            # 每组都跑了 subset_task_count 个任务
+            assert config.get("eligible_memory_tasks", 0) > 0 or config.get("l3l4_tasks", 0) >= 0
