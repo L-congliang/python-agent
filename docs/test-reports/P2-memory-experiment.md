@@ -13,10 +13,10 @@
 | fact_lookup | 2 | 问答类，验证 contains_text |
 | history_reference | 2 | 有 setup_turns，验证 memory_hit |
 | edit_dependency | 2 | fixture 文件，验证 file_changed |
-| cross_round_recall | 2 | setup 读文件 → 主阶段只提问 |
-| cross_file_dep | 2 | 读 A+B → 改 A，正确修改依赖 B |
-| multi_round_edit | 2 | 多步修改同组文件 |
-| noise | 2 | 注入噪声 → 问正确对象 |
+| cross_round_recall | 2 |  |
+| cross_file_dep | 2 |  |
+| multi_round_edit | 2 |  |
+| noise | 2 |  |
 
 ## 指标定义
 
@@ -30,39 +30,67 @@
 
 ## 实验结果
 
-### V1 修复后（2026-07-04，ContextManager 接入 + 去重 + 路径归一化）
+| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration | 耗时 |
+|------|-------------|----------------|-----------------|---------------|-------------|------|
+| memory_on | 93% | 1 | 60% (10 eligible) | 2.1 | 13.2s | 289.0s |
+| memory_off | 93% | 1 | 56% (9 eligible) | 2.0 | 12.6s | 280.1s |
+| memory_irrelevant | 100% | 1 | 50% (10 eligible) | 2.2 | 12.1s | 273.9s |
 
-| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration |
-|------|-------------|----------------|-----------------|----------------|--------------|
-| memory_on | **100%** | 1 | 40% (10 eligible) | 2.3 | 14.8s |
-| memory_off | 100% | 0 | 60% (10 eligible) | 2.1 | 12.0s |
+## 各任务详情
 
-### V1 退化版（2026-07-04，ContextManager 接入但有 bug）
+### memory_on
 
-| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration |
-|------|-------------|----------------|-----------------|----------------|--------------|
-| memory_on | 86% | 0 | 44% (9 eligible) | 2.0 | 13.1s |
-| memory_off | 86% | 1 | 60% (10 eligible) | 2.1 | 14.2s |
+| task_id | correct | repeated_reads | memory_hit | tool_calls | duration |
+|---------|---------|----------------|------------|------------|----------|
+| fact_loop_max_turns | ✅ | 0 | n/a | 3 | 6.6s |
+| fact_manager_methods | ✅ | 0 | n/a | 3 | 11.3s |
+| history_loop_config | ✅ | 0 | 1 | 0 | 6.9s |
+| history_manager_class | ✅ | 0 | 1 | 0 | 19.8s |
+| edit_main_function | ✅ | 0 | n/a | 3 | 8.5s |
+| edit_config_update | ✅ | 1 | n/a | 4 | 9.3s |
+| recall_api_key | ❌ | 0 | 1 | 0 | 16.3s |
+| recall_rate_limit | ✅ | 0 | 1 | 0 | 9.7s |
+| dep_use_api_key | ✅ | 0 | 0 | 3 | 21.5s |
+| dep_update_header | ✅ | 0 | 1 | 1 | 11.3s |
+| multi_add_timeout | ✅ | 0 | 0 | 6 | 26.5s |
+| multi_add_validation | ✅ | 0 | 1 | 2 | 15.9s |
+| noise_db_config | ✅ | 0 | 0 | 2 | 12.0s |
+| noise_cache_port | ✅ | 0 | 0 | 2 | 9.4s |
 
-### V0 基线（2026-07-04，升级任务集后）
+### memory_off
 
-| 配置 | correct_rate | repeated_reads | memory_hit_rate | avg_tool_calls | avg_duration |
-|------|-------------|----------------|-----------------|----------------|--------------|
-| memory_on | 100% | 1 | 50% (10 eligible) | 2.2 | 14.4s |
-| memory_off | 86% | 1 | 50% (10 eligible) | 2.2 | 14.4s |
-| memory_irrelevant | 93% | 2 | 60% (10 eligible) | 2.3 | 14.3s |
+| task_id | correct | repeated_reads | memory_hit | tool_calls | duration |
+|---------|---------|----------------|------------|------------|----------|
+| fact_loop_max_turns | ✅ | 0 | n/a | 3 | 12.1s |
+| fact_manager_methods | ✅ | 0 | n/a | 3 | 7.8s |
+| history_loop_config | ✅ | 0 | 1 | 0 | 5.9s |
+| history_manager_class | ✅ | 0 | 1 | 0 | 17.2s |
+| edit_main_function | ✅ | 0 | n/a | 3 | 8.9s |
+| edit_config_update | ✅ | 1 | n/a | 4 | 11.5s |
+| recall_api_key | ✅ | 0 | 1 | 0 | 13.1s |
+| recall_rate_limit | ✅ | 0 | 1 | 0 | 7.8s |
+| dep_use_api_key | ❌ | 0 | n/a | 0 | 17.0s |
+| dep_update_header | ✅ | 0 | 1 | 1 | 11.9s |
+| multi_add_timeout | ✅ | 0 | 0 | 6 | 18.6s |
+| multi_add_validation | ✅ | 0 | 0 | 4 | 23.5s |
+| noise_db_config | ✅ | 0 | 0 | 2 | 10.1s |
+| noise_cache_port | ✅ | 0 | 0 | 2 | 10.8s |
 
-## V1 修复记录
+### memory_irrelevant
 
-**问题 1：history + current_request 重复注入。** format_history(self._messages) 包含了最后一条 user 消息，随后又单独提取 current_request，导致当前请求在 prompt 中出现两次，浪费 token 并增加截断概率。修复：history 排除最后一条 user 消息。
-
-**问题 2：file_summaries 的 recent_files 优先规则失效。** touch_file() 存相对路径，update_file_summary() 存绝对路径，导致 path in recent 永远匹配不上。修复：select_relevant_file_summaries() 做 basename + normpath 双重匹配。
-
-**问题 3（未修）：budget 裁剪顺序。** tools(2000) 在 memory(1600) 之前被裁。本次实验 metadata 显示零截断，暂不需要调。
-
-## 结论
-
-- V1 改造方向正确，修复后 memory_on 回到 100%
-- ContextManager 零截断（所有 section 都在预算内）
-- history 去重和路径归一化是关键修复
-- 下一步：跑三轮稳定实验，确认结果可复现
+| task_id | correct | repeated_reads | memory_hit | tool_calls | duration |
+|---------|---------|----------------|------------|------------|----------|
+| fact_loop_max_turns | ✅ | 0 | n/a | 4 | 7.7s |
+| fact_manager_methods | ✅ | 0 | n/a | 4 | 8.2s |
+| history_loop_config | ✅ | 0 | 1 | 0 | 9.4s |
+| history_manager_class | ✅ | 0 | 1 | 0 | 19.6s |
+| edit_main_function | ✅ | 0 | n/a | 3 | 9.2s |
+| edit_config_update | ✅ | 1 | n/a | 5 | 14.4s |
+| recall_api_key | ✅ | 0 | 1 | 0 | 9.0s |
+| recall_rate_limit | ✅ | 0 | 1 | 0 | 9.2s |
+| dep_use_api_key | ✅ | 0 | 0 | 3 | 12.8s |
+| dep_update_header | ✅ | 0 | 0 | 2 | 14.9s |
+| multi_add_timeout | ✅ | 0 | 0 | 6 | 24.4s |
+| multi_add_validation | ✅ | 0 | 1 | 2 | 17.6s |
+| noise_db_config | ✅ | 0 | 0 | 1 | 6.4s |
+| noise_cache_port | ✅ | 0 | 0 | 1 | 7.0s |

@@ -22,8 +22,16 @@ import pytest
 
 from agent.core.loop import AgentLoop, LoopConfig
 from agent.core.model import MimoClient, StreamResult
-from agent.core.types import ToolResult
+from agent.core.types import (
+    PermissionConfirmationOutcome,
+    PermissionDecision,
+    PermissionRequest,
+    ToolCall,
+    ToolResult,
+)
 from agent.tools.base import build_tool
+from agent.tools.file_edit import file_edit_tool
+from agent.tools.file_write import file_write_tool
 from agent.tools.registry import ToolRegistry
 
 
@@ -49,6 +57,7 @@ def _make_read_tool():
             "required": ["path"],
         },
         execute_fn=execute,
+        is_read_only=lambda input: True,
     )
 
 
@@ -62,6 +71,7 @@ def _make_noop_tool():
         description="空操作",
         parameters={"type": "object", "properties": {}},
         execute_fn=execute,
+        is_read_only=lambda input: True,
     )
 
 
@@ -294,6 +304,7 @@ class TestAgentLoopAbort:
             description="慢操作",
             parameters={"type": "object", "properties": {}},
             execute_fn=slow_execute,
+            is_read_only=lambda input: True,
         )
 
         client = _mock_client([
@@ -448,6 +459,278 @@ class TestAgentLoopToolResultFormat:
                     found_error = True
                     break
         assert found_error
+
+
+class TestAgentLoopPathGuard:
+    """路径逃逸防护覆盖搜索工具"""
+
+    def test_grep_path_escape_blocked(self):
+        client = _mock_client([])
+        registry = ToolRegistry()
+        loop = AgentLoop(
+            client,
+            registry,
+            LoopConfig(
+                workspace_root="/workspace",
+                enable_trace=False,
+                enable_checkpoint=False,
+            ),
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(id="t1", name="grep", arguments={"pattern": "secret", "path": "../etc"}),
+        ])
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert "escape" in str(results[0].output).lower()
+
+
+class TestAgentLoopPermissionHandling:
+    """权限 ALLOW / ASK / DENY 行为测试"""
+
+    def test_allow_still_executes(self):
+        executed = {"value": False}
+        confirm_requests: list[PermissionRequest] = []
+
+        def execute(input, context):
+            executed["value"] = True
+            return ToolResult(output="ok")
+
+        tool = build_tool(
+            name="read",
+            description="read",
+            parameters={"type": "object", "properties": {}},
+            execute_fn=execute,
+            is_read_only=lambda input: True,
+        )
+        loop = AgentLoop(
+            _mock_client([]),
+            ToolRegistry(),
+            LoopConfig(enable_trace=False, enable_checkpoint=False),
+        )
+        loop._registry.register(tool)
+        loop.set_permission_handler(
+            lambda request: confirm_requests.append(request) or PermissionConfirmationOutcome.DENIED
+        )
+
+        results = loop._execute_tool_calls([ToolCall(id="t1", name="read", arguments={})])
+
+        assert executed["value"] is True
+        assert confirm_requests == []
+        assert len(results) == 1
+        assert results[0].is_error is False
+        assert results[0].output == "ok"
+
+    def test_deny_still_rejects(self):
+        executed = {"value": False}
+        confirm_requests: list[PermissionRequest] = []
+
+        def execute(input, context):
+            executed["value"] = True
+            return ToolResult(output="should not run")
+
+        tool = build_tool(
+            name="danger",
+            description="danger",
+            parameters={"type": "object", "properties": {}},
+            execute_fn=execute,
+            is_read_only=lambda input: True,
+            check_permissions=lambda input, ctx: PermissionDecision.deny("禁止执行"),
+        )
+        loop = AgentLoop(
+            _mock_client([]),
+            ToolRegistry(),
+            LoopConfig(enable_trace=False, enable_checkpoint=False),
+        )
+        loop._registry.register(tool)
+        loop.set_permission_handler(
+            lambda request: confirm_requests.append(request) or PermissionConfirmationOutcome.APPROVED
+        )
+
+        results = loop._execute_tool_calls([ToolCall(id="t1", name="danger", arguments={})])
+
+        assert executed["value"] is False
+        assert confirm_requests == []
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert "禁止执行" in str(results[0].output)
+
+    def test_bash_ask_executes_after_user_confirms(self):
+        executed = {"value": False}
+
+        def execute(input, context):
+            executed["value"] = True
+            return ToolResult(output="ran bash")
+
+        bash_like_tool = build_tool(
+            name="bash",
+            description="bash",
+            parameters={"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+            execute_fn=execute,
+            is_read_only=lambda input: False,
+        )
+        loop = AgentLoop(
+            _mock_client([]),
+            ToolRegistry(),
+            LoopConfig(enable_trace=False, enable_checkpoint=False),
+        )
+        loop._registry.register(bash_like_tool)
+        loop.set_permission_handler(
+            lambda request: PermissionConfirmationOutcome.APPROVED
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(id="t1", name="bash", arguments={"command": "echo hello"}),
+        ])
+
+        assert executed["value"] is True
+        assert len(results) == 1
+        assert results[0].is_error is False
+        assert "已确认执行" in str(results[0].output)
+        assert "ran bash" in str(results[0].output)
+
+    def test_bash_ask_rejected_by_user(self):
+        executed = {"value": False}
+
+        def execute(input, context):
+            executed["value"] = True
+            return ToolResult(output="ran bash")
+
+        bash_like_tool = build_tool(
+            name="bash",
+            description="bash",
+            parameters={"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+            execute_fn=execute,
+            is_read_only=lambda input: False,
+        )
+        loop = AgentLoop(
+            _mock_client([]),
+            ToolRegistry(),
+            LoopConfig(enable_trace=False, enable_checkpoint=False),
+        )
+        loop._registry.register(bash_like_tool)
+        loop.set_permission_handler(
+            lambda request: PermissionConfirmationOutcome.DENIED
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(id="t1", name="bash", arguments={"command": "echo hello"}),
+        ])
+
+        assert executed["value"] is False
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert "用户拒绝" in str(results[0].output)
+        assert "未执行" in str(results[0].output)
+
+    def test_write_ask_does_not_execute(self, tmp_path):
+        registry = ToolRegistry()
+        registry.register(file_write_tool)
+        loop = AgentLoop(
+            _mock_client([]),
+            registry,
+            LoopConfig(
+                workspace_root=str(tmp_path),
+                enable_trace=False,
+                enable_checkpoint=False,
+            ),
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(id="t1", name="write", arguments={"file_path": "a.txt", "content": "hello"}),
+        ])
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert "需要确认" in str(results[0].output)
+        assert not (tmp_path / "a.txt").exists()
+
+    def test_write_ask_with_unavailable_handler_still_fail_closed(self, tmp_path):
+        registry = ToolRegistry()
+        registry.register(file_write_tool)
+        loop = AgentLoop(
+            _mock_client([]),
+            registry,
+            LoopConfig(
+                workspace_root=str(tmp_path),
+                enable_trace=False,
+                enable_checkpoint=False,
+            ),
+        )
+        loop.set_permission_handler(
+            lambda request: PermissionConfirmationOutcome.UNAVAILABLE
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(id="t1", name="write", arguments={"file_path": "a.txt", "content": "hello"}),
+        ])
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert "当前环境未提供交互式确认能力" in str(results[0].output)
+        assert not (tmp_path / "a.txt").exists()
+
+    def test_edit_ask_returns_preview_without_writing(self, tmp_path):
+        target = tmp_path / "a.txt"
+        target.write_text("hello world", encoding="utf-8")
+        registry = ToolRegistry()
+        registry.register(file_edit_tool)
+        loop = AgentLoop(
+            _mock_client([]),
+            registry,
+            LoopConfig(
+                workspace_root=str(tmp_path),
+                enable_trace=False,
+                enable_checkpoint=False,
+            ),
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(
+                id="t1",
+                name="edit",
+                arguments={"file_path": "a.txt", "old_string": "hello", "new_string": "hi"},
+            ),
+        ])
+
+        assert len(results) == 1
+        assert results[0].is_error is True
+        assert "需要确认" in str(results[0].output)
+        assert "预览模式" in str(results[0].output)
+        assert "--- a/a.txt" in str(results[0].output)
+        assert target.read_text(encoding="utf-8") == "hello world"
+
+    def test_edit_ask_executes_after_confirmation(self, tmp_path):
+        target = tmp_path / "a.txt"
+        target.write_text("hello world", encoding="utf-8")
+        registry = ToolRegistry()
+        registry.register(file_edit_tool)
+        loop = AgentLoop(
+            _mock_client([]),
+            registry,
+            LoopConfig(
+                workspace_root=str(tmp_path),
+                enable_trace=False,
+                enable_checkpoint=False,
+            ),
+        )
+        loop.set_permission_handler(
+            lambda request: PermissionConfirmationOutcome.APPROVED
+        )
+
+        results = loop._execute_tool_calls([
+            ToolCall(
+                id="t1",
+                name="edit",
+                arguments={"file_path": "a.txt", "old_string": "hello", "new_string": "hi"},
+            ),
+        ])
+
+        assert len(results) == 1
+        assert results[0].is_error is False
+        assert "已确认执行" in str(results[0].output)
+        assert target.read_text(encoding="utf-8") == "hi world"
 
 
 class TestAgentLoopTokenTracking:

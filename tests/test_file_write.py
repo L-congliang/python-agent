@@ -422,13 +422,27 @@ class TestExecuteFileWrite:
         assert file_path.read_text(encoding="utf-8") == "hello world"
 
     def test_overwrite_existing(self, context, tmp_dir):
-        """覆盖现有文件"""
+        """现有文件默认拒绝覆盖"""
         file_path = tmp_dir / "test.txt"
         file_path.write_text("old content", encoding="utf-8")
         result = execute_file_write(
             {"file_path": "test.txt", "content": "new content"}, context
         )
+        assert result.is_error
+        assert "默认不会覆盖" in result.output
+        assert "overwrite=true" in result.output
+        assert file_path.read_text(encoding="utf-8") == "old content"
+
+    def test_overwrite_existing_with_explicit_flag(self, context, tmp_dir):
+        """显式 overwrite=true 时允许覆盖"""
+        file_path = tmp_dir / "test.txt"
+        file_path.write_text("old content", encoding="utf-8")
+        result = execute_file_write(
+            {"file_path": "test.txt", "content": "new content", "overwrite": True},
+            context,
+        )
         assert not result.is_error
+        assert "覆盖写入成功" in result.output
         assert file_path.read_text(encoding="utf-8") == "new content"
 
     def test_auto_create_directory(self, context, tmp_dir):
@@ -536,6 +550,7 @@ class TestFileWriteTool:
         """工具参数定义正确"""
         assert "file_path" in file_write_tool.parameters["properties"]
         assert "content" in file_write_tool.parameters["properties"]
+        assert "overwrite" in file_write_tool.parameters["properties"]
         assert "file_path" in file_write_tool.parameters["required"]
         assert "content" in file_write_tool.parameters["required"]
 
@@ -554,6 +569,10 @@ class TestFileWriteTool:
     def test_is_not_destructive(self):
         """Write 工具默认非破坏性"""
         assert not file_write_tool.is_destructive({})
+
+    def test_overwrite_is_destructive(self):
+        """显式覆盖应视为破坏性操作"""
+        assert file_write_tool.is_destructive({"overwrite": True})
 
     def test_get_summary(self):
         """获取摘要"""

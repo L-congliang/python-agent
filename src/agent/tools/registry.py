@@ -21,6 +21,28 @@ from agent.core.types import ToolResult, PermissionBehavior
 from agent.core.context import ToolUseContext
 
 
+def register_base_tools(registry: "ToolRegistry") -> "ToolRegistry":
+    """向注册表中注入默认基础工具。"""
+    from agent.tools.bash import bash_tool
+    from agent.tools.file_edit import file_edit_tool
+    from agent.tools.file_read import file_read_tool
+    from agent.tools.file_write import file_write_tool
+    from agent.tools.glob import glob_tool
+    from agent.tools.grep import grep_tool
+
+    for tool in (
+        bash_tool,
+        file_read_tool,
+        file_write_tool,
+        file_edit_tool,
+        grep_tool,
+        glob_tool,
+    ):
+        if registry.get(tool.name) is None:
+            registry.register(tool)
+    return registry
+
+
 class ToolRegistry:
     """工具注册表
 

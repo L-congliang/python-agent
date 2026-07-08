@@ -65,6 +65,7 @@ class TestFileEditParameters:
         assert props["old_string"]["type"] == "string"
         assert props["new_string"]["type"] == "string"
         assert props["replace_all"]["type"] == "boolean"
+        assert props["preview"]["type"] == "boolean"
 
 
 # ============================================================
@@ -224,6 +225,22 @@ class TestValidateFileEditInput:
         )
         assert result.is_valid
 
+    def test_invalid_preview_type(self, context, tmp_dir):
+        """preview 必须是布尔值"""
+        file_path = tmp_dir / "test.txt"
+        file_path.write_text("hello world", encoding="utf-8")
+        result = validate_file_edit_input(
+            {
+                "file_path": "test.txt",
+                "old_string": "hello",
+                "new_string": "hi",
+                "preview": "yes",
+            },
+            context,
+        )
+        assert not result.is_valid
+        assert "preview" in result.message
+
 
 # ============================================================
 # 核心执行测试
@@ -243,6 +260,7 @@ class TestExecuteFileEdit:
         )
         assert not result.is_error
         assert "修改成功" in result.output
+        assert "--- a/test.txt" in result.output
         assert file_path.read_text(encoding="utf-8") == "hi world"
 
     def test_replace_all(self, context, tmp_dir):
@@ -259,6 +277,7 @@ class TestExecuteFileEdit:
             context,
         )
         assert not result.is_error
+        assert "共替换 2 处" in result.output
         assert file_path.read_text(encoding="utf-8") == "hi hi world"
 
     def test_replace_single_occurrence(self, context, tmp_dir):
@@ -394,6 +413,43 @@ class TestExecuteFileEdit:
         content = file_path.read_text(encoding="utf-8")
         assert "def hello(name):" in content
         assert "print(f'hello {name}')" in content
+
+    def test_preview_mode_does_not_write_file(self, context, tmp_dir):
+        """preview 模式只返回 diff，不落盘"""
+        file_path = tmp_dir / "test.txt"
+        file_path.write_text("hello world", encoding="utf-8")
+        result = execute_file_edit(
+            {
+                "file_path": "test.txt",
+                "old_string": "hello",
+                "new_string": "hi",
+                "preview": True,
+            },
+            context,
+        )
+        assert not result.is_error
+        assert "预览模式" in result.output
+        assert "--- a/test.txt" in result.output
+        assert file_path.read_text(encoding="utf-8") == "hello world"
+
+    def test_failed_write_keeps_original_file(self, context, tmp_dir, monkeypatch):
+        """原子写入失败时，原文件仍保持不变"""
+        file_path = tmp_dir / "test.txt"
+        file_path.write_text("hello world", encoding="utf-8")
+
+        def broken_replace(src, dst):
+            raise OSError("replace failed")
+
+        monkeypatch.setattr("agent.tools.file_edit.os.replace", broken_replace)
+
+        result = execute_file_edit(
+            {"file_path": "test.txt", "old_string": "hello", "new_string": "hi"},
+            context,
+        )
+
+        assert result.is_error
+        assert "编辑失败" in result.output
+        assert file_path.read_text(encoding="utf-8") == "hello world"
 
 
 # ============================================================

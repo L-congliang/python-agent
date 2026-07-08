@@ -10,6 +10,7 @@ import pytest
 
 from agent.core.loop import AgentLoop, LoopConfig
 from agent.core.model import MimoClient
+from agent.core.model import StreamResult
 from agent.tools.registry import ToolRegistry
 from agent.tools.base import build_tool
 from agent.core.types import ToolResult, PermissionDecision
@@ -130,6 +131,26 @@ class TestPlanModePermission:
         decision = checker.check(write_tool, {}, context)
         assert decision.behavior.value == "ask"
 
+    def test_default_mode_ask_is_not_allow(self):
+        """Default 模式下 ASK 不能被当成 ALLOW"""
+        checker = PermissionChecker(mode=PermissionMode.DEFAULT)
+        write_tool = build_tool(
+            name="write",
+            description="写入文件",
+            parameters={},
+            execute_fn=lambda input, ctx: ToolResult(output="ok"),
+            is_read_only=lambda input: False,
+        )
+        context = ToolUseContext(
+            model="test",
+            tools=[],
+            abort_controller=None,  # type: ignore[arg-type]
+            file_read_state=None,  # type: ignore[arg-type]
+            messages=[],
+        )
+        decision = checker.check(write_tool, {}, context)
+        assert decision.behavior.value == "ask"
+
 
 # ========== LoopConfig 测试 ==========
 
@@ -146,3 +167,44 @@ class TestPlanModeConfig:
         """Plan Mode 可以启用"""
         config = LoopConfig(plan_mode=True)
         assert config.plan_mode is True
+
+
+class TestPlanModeStreamParity:
+    """run_stream 与 run 的 Plan Mode 行为一致性测试"""
+
+    @staticmethod
+    def _text_stream(text: str) -> StreamResult:
+        return StreamResult(
+            text=iter([text]),
+            content_blocks=[{"type": "text", "text": text}],
+        )
+
+    def _make_loop(self, responses, *, plan_mode: bool = False) -> AgentLoop:
+        class FakeClient:
+            def __init__(self, stream_responses):
+                self._responses = iter(stream_responses)
+
+            def chat_stream(self, messages, system="", tools=None):
+                return next(self._responses)
+
+        registry = ToolRegistry()
+        config = LoopConfig(
+            plan_mode=plan_mode,
+            enable_trace=False,
+            enable_checkpoint=False,
+        )
+        return AgentLoop(FakeClient(responses), registry, config=config)  # type: ignore[arg-type]
+
+    def test_run_stream_enables_plan_mode(self):
+        loop = self._make_loop([self._text_stream("先做计划")])
+
+        list(loop.run_stream("先规划一下怎么做"))
+
+        assert loop._config.plan_mode is True
+
+    def test_run_stream_disables_plan_mode_on_confirmation(self):
+        loop = self._make_loop([self._text_stream("开始执行")], plan_mode=True)
+
+        list(loop.run_stream("确认执行"))
+
+        assert loop._config.plan_mode is False

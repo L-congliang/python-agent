@@ -230,6 +230,33 @@ A：
 
 这个设计让用户能一眼看出"当前跑的是哪个 session、哪个 run、在哪个 workspace"。
 
+## Q：你怎么实现 memory 分层和 cross-session retrieval？
+
+A：
+
+我实现了 Memory v2，把 memory 分成清晰的层次：
+
+1. **分层边界**：
+   - user_preferences：用户偏好（回答风格、工作方式）
+   - project_facts：项目事实（约定、目录结构、设计决策）
+   - episodic_notes：事件笔记（某次任务的结论、调试发现）
+   - working_memory：当前任务的工作记忆
+
+2. **Cross-session retrieval**：
+   - session_search.py：搜索历史 session 和 durable memory
+   - 不使用向量数据库，只用关键词匹配
+   - 返回 top_k 最相关的结果
+
+3. **默认 loop 接入**：
+   - get_memory_summary() 返回 memory 摘要
+   - /inspect 能看到 durable topics、episodic notes、task summary
+
+4. **受 budget 控制**：
+   - recall 受 top_k 限制，不会无脑灌爆 prompt
+   - 和 observation budget 对齐
+
+这个设计让 memory 不只是"模块已存在"，而是真正进入默认 agent 路径。
+
 ## Q：你怎么让 resume 不是"盲目接着跑"？
 
 A：
