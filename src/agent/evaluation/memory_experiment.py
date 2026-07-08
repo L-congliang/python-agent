@@ -83,6 +83,10 @@ class MemoryTask:
     retry_script: list[list[dict[str, Any]]] | None = None
     retry_branches: dict[str, list[list[dict[str, Any]]]] | None = None
     default_retry_branch: str = "use_memory_answer"
+    # Phase 3.2F: first attempt 形态控制（不泄漏到 retry）
+    initial_attempt_mode: str | None = None  # "memory_first" | "reread_first" | None
+    # Phase 3.2F: benchmark 验证用（该任务的最优 retry branch）
+    optimal_retry_branch: str | None = None
 
 
 @dataclass
@@ -141,6 +145,7 @@ class MemoryMetrics:
     reflection_retry_success_rate: float = 0.0  # retry 后结果正确的比例（不是"reflection 帮助率"）
     reflection_avg_extra_tool_calls: float = 0.0  # reflection 引入的额外 tool calls
     reflection_helped_tasks: int = 0  # reflection 确实带来改善的任务数
+    optimal_branch_match_rate: float = 0.0  # 选中 optimal_retry_branch 的比例
 
 
 @dataclass
@@ -673,6 +678,139 @@ MEMORY_TASKS = [
         },
         default_retry_branch="use_memory_answer",
     ),
+
+    # --- Phase 3.2F v2: reflection_sensitive_v2 — 混合最优策略 ---
+    # 这些任务专门设计为"最优策略不一致"：
+    # stale_memory: setup 给旧值，最优是 reread
+    # memory_sufficient: setup 给正确值，最优是 use_memory
+    # partial_memory: setup 只给部分信息，最优是 reread
+    # fixed script 必然在某类上吃亏，prompt-sensitive 能按任务选最优
+
+    # stale_memory: setup 给旧值，main 问真实值
+    MemoryTask(
+        task_id="v2_stale_api_url",
+        category="reflection_sensitive_v2",
+        dependency_level="L3",
+        prompt="What is the API_URL in api_stale.py? Answer with just the URL.",
+        setup_turns=["Read api_stale.py. The API_URL is https://v1.old.internal."],
+        fixture_dir="reflection_sensitive_v2",
+        target_files=["api_stale.py"],
+        verifier="contains_text",
+        expected_substrings=["https://v2.updated.internal"],
+        initial_attempt_mode="memory_first",
+        optimal_retry_branch="reread_then_answer",
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "https://v1.old.internal"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "c1", "name": "read",
+                  "input": {"file_path": "api_stale.py"}}],
+                [{"type": "text", "text": "https://v2.updated.internal"}],
+            ],
+        },
+        default_retry_branch="reread_then_answer",
+    ),
+    MemoryTask(
+        task_id="v2_stale_cache_port",
+        category="reflection_sensitive_v2",
+        dependency_level="L3",
+        prompt="What is CACHE_PORT in cache_stale.py? Answer with just the number.",
+        setup_turns=["Read cache_stale.py. The CACHE_PORT is 6379."],
+        fixture_dir="reflection_sensitive_v2",
+        target_files=["cache_stale.py"],
+        verifier="contains_text",
+        expected_substrings=["6380"],
+        initial_attempt_mode="memory_first",
+        optimal_retry_branch="reread_then_answer",
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "6379"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "c1", "name": "read",
+                  "input": {"file_path": "cache_stale.py"}}],
+                [{"type": "text", "text": "6380"}],
+            ],
+        },
+        default_retry_branch="reread_then_answer",
+    ),
+
+    # memory_sufficient: setup 给正确值，reread 是浪费
+    MemoryTask(
+        task_id="v2_suff_db_host",
+        category="reflection_sensitive_v2",
+        dependency_level="L3",
+        prompt="What is DB_HOST in database_stable.py? Answer with just the hostname.",
+        setup_turns=["Read database_stable.py. The DB_HOST is db.prod.internal."],
+        fixture_dir="reflection_sensitive_v2",
+        target_files=["database_stable.py"],
+        verifier="contains_text",
+        expected_substrings=["db.prod.internal"],
+        initial_attempt_mode="reread_first",
+        optimal_retry_branch="use_memory_answer",
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "db.prod.internal"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "c1", "name": "read",
+                  "input": {"file_path": "database_stable.py"}}],
+                [{"type": "text", "text": "db.prod.internal"}],
+            ],
+        },
+        default_retry_branch="use_memory_answer",
+    ),
+    MemoryTask(
+        task_id="v2_suff_api_key",
+        category="reflection_sensitive_v2",
+        dependency_level="L3",
+        prompt="What is API_KEY in api_config_stable.py? Answer with just the key.",
+        setup_turns=["Read api_config_stable.py. The API_KEY is sk-prod-abc123xyz789."],
+        fixture_dir="reflection_sensitive_v2",
+        target_files=["api_config_stable.py"],
+        verifier="contains_text",
+        expected_substrings=["sk-prod-abc123xyz789"],
+        initial_attempt_mode="reread_first",
+        optimal_retry_branch="use_memory_answer",
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "sk-prod-abc123xyz789"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "c1", "name": "read",
+                  "input": {"file_path": "api_config_stable.py"}}],
+                [{"type": "text", "text": "sk-prod-abc123xyz789"}],
+            ],
+        },
+        default_retry_branch="use_memory_answer",
+    ),
+
+    # partial_memory: setup 只给部分信息，main 需要全部
+    MemoryTask(
+        task_id="v2_partial_config",
+        category="reflection_sensitive_v2",
+        dependency_level="L3",
+        prompt="Return API_KEY and RATE_LIMIT from config_partial.py in this format: KEY=<value>; RATE=<value>",
+        setup_turns=["Read config_partial.py. The API_KEY is sk-test-key."],
+        fixture_dir="reflection_sensitive_v2",
+        target_files=["config_partial.py"],
+        verifier="contains_text",
+        expected_substrings=["sk-test-key", "100"],
+        initial_attempt_mode="memory_first",
+        optimal_retry_branch="reread_then_answer",
+        retry_branches={
+            "use_memory_answer": [
+                [{"type": "text", "text": "KEY=sk-test-key; RATE=unknown"}],
+            ],
+            "reread_then_answer": [
+                [{"type": "tool_use", "id": "c1", "name": "read",
+                  "input": {"file_path": "config_partial.py"}}],
+                [{"type": "text", "text": "KEY=sk-test-key; RATE=100"}],
+            ],
+        },
+        default_retry_branch="reread_then_answer",
+    ),
 ]
 
 
@@ -1182,6 +1320,8 @@ class MemoryExperiment:
         reflection_success_count = 0
         reflection_extra_tool_calls = 0
         reflection_helped_count = 0  # reflection 确实带来改善的任务数
+        optimal_branch_match_count = 0  # 选中了 optimal_retry_branch 的任务数
+        branch_verified_count = 0  # 有 optimal_retry_branch 标注的任务数
 
         for i, task in enumerate(tasks):
             logger.info("  Running task: %s", task.task_id)
@@ -1242,6 +1382,13 @@ class MemoryExperiment:
                     helped = True  # 从 reread 变不 reread
                 if helped:
                     reflection_helped_count += 1
+                # optimal branch 匹配
+                optimal = result.get("optimal_retry_branch", "")
+                selected = result.get("selected_retry_branch", "")
+                if optimal:
+                    branch_verified_count += 1
+                    if selected == optimal:
+                        optimal_branch_match_count += 1
 
             # 任务间延迟，避免 429（从 8s 提升到 15s）
             if i < len(tasks) - 1 and self._use_real_model:
@@ -1260,6 +1407,7 @@ class MemoryExperiment:
         reflection_trigger_rate = reflection_triggered_count / n if n > 0 else 0.0
         reflection_retry_success_rate = reflection_success_count / reflection_triggered_count if reflection_triggered_count > 0 else 0.0
         reflection_avg_extra_tool_calls = reflection_extra_tool_calls / reflection_triggered_count if reflection_triggered_count > 0 else 0.0
+        optimal_branch_match_rate = optimal_branch_match_count / branch_verified_count if branch_verified_count > 0 else 0.0
 
         metrics = MemoryMetrics(
             repeated_reads=total_repeated_reads,
@@ -1278,6 +1426,7 @@ class MemoryExperiment:
             reflection_retry_success_rate=reflection_retry_success_rate,
             reflection_avg_extra_tool_calls=reflection_avg_extra_tool_calls,
             reflection_helped_tasks=reflection_helped_count,
+            optimal_branch_match_rate=optimal_branch_match_rate,
         )
 
         # config 级异常判定：有异常任务的 config 不进正式统计
@@ -1351,8 +1500,14 @@ class MemoryExperiment:
         """
         rounds: list[list[dict[str, Any]]] = []
 
-        # 判断是否应该跳过 reread（memory 生效时）
-        should_skip_reread = use_memory and task.setup_turns
+        # Phase 3.2F: initial_attempt_mode 覆盖默认行为
+        # initial_attempt_mode 只控制 first attempt，不泄漏到 retry
+        if task.initial_attempt_mode == "memory_first":
+            should_skip_reread = True  # 即使 use_memory=False 也跳过 reread
+        elif task.initial_attempt_mode == "reread_first":
+            should_skip_reread = False  # 即使 use_memory=True 也执行 reread
+        else:
+            should_skip_reread = use_memory and task.setup_turns
 
         if task.target_files and not should_skip_reread:
             # 读取第一个目标文件（memory_off 或无 setup_turns）
@@ -1368,7 +1523,13 @@ class MemoryExperiment:
             ])
 
         # 最终回复
-        if task.expected_substrings:
+        # Phase 3.2F: memory_first 任务用 setup 里的值（可能过时/不完整）
+        # 而不是 expected_substrings（那是正确答案）
+        if should_skip_reread and task.setup_turns:
+            # memory_first: 从 setup 提取信息（模拟"用记忆回答"）
+            # 用 setup_turns 的内容作为答案（可能过时）
+            default_answer = self._extract_answer_from_setup(task)
+        elif task.expected_substrings:
             default_answer = " ".join(task.expected_substrings[:3])
         else:
             default_answer = "Task completed based on file analysis."
@@ -1376,6 +1537,29 @@ class MemoryExperiment:
         rounds.append([{"type": "text", "text": default_answer}])
 
         return rounds
+
+    def _extract_answer_from_setup(self, task: MemoryTask) -> str:
+        """从 setup_turns 提取答案（模拟"用记忆回答"）
+
+        对于 stale_memory 任务，这会返回过时的值。
+        对于 partial_memory 任务，这会返回不完整的值。
+        """
+        if not task.setup_turns:
+            return "Task completed."
+
+        # 合并所有 setup_turns 的内容作为"记忆"
+        setup_text = " ".join(task.setup_turns)
+
+        # 尝试提取 "is <value>" 或 "= <value>" 模式
+        import re
+        # 匹配 "The X is Y." 或 "X is Y" 模式
+        matches = re.findall(r'(?:is|=)\s+([^\s.]+(?:\.[^\s.]+)*)', setup_text)
+        if matches:
+            # 返回最后一个匹配值（通常是实际值）
+            return matches[-1]
+
+        # fallback: 返回 setup 文本的最后部分
+        return setup_text.split(".")[-2].strip() if "." in setup_text else setup_text
 
     def _run_scripted_task(
         self,
@@ -1557,6 +1741,14 @@ class MemoryExperiment:
                         task, retry_loop.tool_history, workspace_root,
                     )
 
+                    # 确定 selected_retry_branch
+                    # 优先级：PromptAwareClient 实际选中 > runner 强制的 branch > builder plan
+                    selected_branch = plan.retry_strategy
+                    if hasattr(retry_client, '_selected_branch'):
+                        selected_branch = retry_client._selected_branch
+                    elif hasattr(task, '_forced_retry_branch'):
+                        selected_branch = task._forced_retry_branch
+
                     # 返回 retry 结果，附带 reflection 元数据
                     duration = time.time() - start_time
                     return {
@@ -1583,6 +1775,9 @@ class MemoryExperiment:
                         "first_attempt_correct": correct,
                         "first_attempt_tool_calls": tool_calls,
                         "first_attempt_read_target": read_target_after_setup,
+                        # branch 选择元数据
+                        "selected_retry_branch": selected_branch,
+                        "optimal_retry_branch": task.optimal_retry_branch,
                     }
 
             # 无 reflection 或不触发
@@ -1591,6 +1786,8 @@ class MemoryExperiment:
             first_result["reflection_trigger_type"] = "none"
             first_result["first_attempt_correct"] = correct
             first_result["first_attempt_tool_calls"] = tool_calls
+            first_result["selected_retry_branch"] = ""
+            first_result["optimal_retry_branch"] = task.optimal_retry_branch or ""
             return first_result
 
         except Exception as e:

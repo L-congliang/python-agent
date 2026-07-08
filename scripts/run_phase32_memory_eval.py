@@ -81,8 +81,11 @@ def main() -> None:
         from agent.reflection.types import ReflectionConfig
         from agent.evaluation.memory_experiment import MEMORY_TASKS, MemoryConfig
 
-        # 找 reflection-sensitive 子集（有 retry_branches 的任务）
-        subset = [t for t in MEMORY_TASKS if t.retry_branches is not None]
+        # 找 reflection_sensitive_v2 子集（混合最优策略的 5 个任务）
+        subset = [t for t in MEMORY_TASKS if t.category == "reflection_sensitive_v2"]
+        if not subset:
+            # fallback: 用所有有 retry_branches 的任务
+            subset = [t for t in MEMORY_TASKS if t.retry_branches is not None]
         if not subset:
             print("ERROR: No tasks with retry_branches found. Cannot run three-group comparison.")
             return
@@ -105,20 +108,22 @@ def main() -> None:
         baseline_config_off = MemoryConfig(name="subset_baseline", use_memory=False)
         baseline_result = experiment._run_single_config(baseline_config_off, subset)
 
-        # Group 2: Subset Scripted Retry（memory_off + 固定 retry_script）
-        # 关键：临时关闭 retry_branches，只保留 retry_script
-        # 这样 _run_scripted_task 会走 ScriptedModelClient（固定路径），
-        # 而不是 PromptAwareScriptedModelClient（prompt-sensitive 路径）
-        print("Running Subset Scripted Retry (memory_off, fixed retry)...")
+        # Group 2: Subset Scripted Retry（memory_off + 统一固定策略 "reread_then_answer"）
+        # 关键：所有 task 用同一个固定策略，而不是各自最优默认
+        # 这样固定策略才会在 memory_sufficient 任务上浪费 tool call
+        print("Running Subset Scripted Retry (memory_off, fixed reread_then_answer)...")
         saved_branches: dict[str, dict] = {}
+        fixed_strategy = "reread_then_answer"  # 统一固定策略
         for t in subset:
             saved_branches[t.task_id] = {
                 "retry_branches": t.retry_branches,
                 "retry_script": t.retry_script,
+                "forced_retry_branch": getattr(t, '_forced_retry_branch', None),
             }
-            if t.retry_branches and t.default_retry_branch in t.retry_branches:
-                t.retry_script = t.retry_branches[t.default_retry_branch]
+            if t.retry_branches and fixed_strategy in t.retry_branches:
+                t.retry_script = t.retry_branches[fixed_strategy]
                 t.retry_branches = None  # 关键：关闭 prompt-sensitive 路径
+                t._forced_retry_branch = fixed_strategy  # 记录实际执行的 branch
         scripted_config = MemoryConfig(name="subset_scripted_retry", use_memory=False)
         scripted_result = experiment._run_single_config(scripted_config, subset, reflection_config)
         # 恢复
@@ -126,6 +131,10 @@ def main() -> None:
             saved = saved_branches[t.task_id]
             t.retry_branches = saved["retry_branches"]
             t.retry_script = saved["retry_script"]
+            if saved["forced_retry_branch"] is not None:
+                t._forced_retry_branch = saved["forced_retry_branch"]
+            elif hasattr(t, '_forced_retry_branch'):
+                delattr(t, '_forced_retry_branch')
 
         # Group 3: Subset Prompt-Sensitive Retry（memory_off + prompt-sensitive）
         print("Running Subset Prompt-Sensitive Retry (memory_off, prompt-sensitive)...")
@@ -204,6 +213,7 @@ def main() -> None:
             config_data["reflection_retry_success_rate"] = m.reflection_retry_success_rate
             config_data["reflection_avg_extra_tool_calls"] = m.reflection_avg_extra_tool_calls
             config_data["reflection_helped_tasks"] = m.reflection_helped_tasks
+            config_data["optimal_branch_match_rate"] = m.optimal_branch_match_rate
         output["memory"][r.config.name] = config_data
 
     # 三组模式：写入 delta 指标
@@ -280,8 +290,8 @@ def main() -> None:
     if has_reflection:
         print()
         print("Reflection Metrics (Phase 3.2C):")
-        print(f"{'Config':<20} {'trig_rate':>10} {'retry_ok':>10} {'helped':>8} {'extra_tools':>12}")
-        print("-" * 60)
+        print(f"{'Config':<20} {'trig_rate':>10} {'retry_ok':>10} {'helped':>8} {'branch_ok':>10} {'extra_tools':>12}")
+        print("-" * 72)
         for r in results:
             m = r.metrics
             print(
@@ -289,6 +299,7 @@ def main() -> None:
                 f"{m.reflection_trigger_rate:>9.0%} "
                 f"{m.reflection_retry_success_rate:>9.0%} "
                 f"{m.reflection_helped_tasks:>7d} "
+                f"{m.optimal_branch_match_rate:>9.0%} "
                 f"{m.reflection_avg_extra_tool_calls:>11.1f}"
             )
 

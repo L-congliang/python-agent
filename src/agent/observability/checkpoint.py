@@ -127,7 +127,7 @@ class CheckpointManager:
         """
         path = Path(file_path)
         if not path.exists():
-            logger.warning("Cannot track non-existent file: %s", file_path)
+            logger.debug("Cannot track non-existent file: %s", file_path)
             return
 
         stat = path.stat()

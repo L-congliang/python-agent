@@ -54,18 +54,31 @@ class ReflectionBuilder:
     ) -> tuple[str, bool]:
         """根据触发类型和 task 特征确定 retry strategy
 
+        核心逻辑：
+        - reread 后答对 → memory 已足够，纠正为 use_memory（避免浪费）
+        - 没 reread 且答错 → memory 不够，纠正为 reread
+        - reread 后答错 → memory 和 file 都不行，尝试换策略
+        - 没 reread 且答对 → 默认 use_memory
+
         Returns:
             (retry_strategy, should_reread_target)
         """
-        # 如果第一次 reread 了目标文件 → 应该用 memory 回答，不再 reread
-        if summary.read_target_after_setup:
+        reread = summary.read_target_after_setup
+        correct = summary.first_attempt_correct
+
+        if reread and correct:
+            # wasted_reread: reread 了但 memory 其实够用 → 纠正为 use_memory
             return "use_memory_answer", False
 
-        # 如果第一次答错且没 reread → 可能需要 reread 获取正确信息
-        if not summary.first_attempt_correct and not summary.read_target_after_setup:
+        if not reread and not correct:
+            # wrong_memory: 用 memory 但答错了 → 纠正为 reread
             return "reread_then_answer", True
 
-        # 默认：用 memory 回答
+        if reread and not correct:
+            # reread 了还是错 → 尝试用 memory（可能是 verifier 问题）
+            return "use_memory_answer", False
+
+        # not reread and correct → 默认
         return "use_memory_answer", False
 
     def _build_prompt(

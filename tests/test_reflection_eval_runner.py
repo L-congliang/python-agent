@@ -239,3 +239,41 @@ class TestThreeGroupRunner:
             config = data["memory"][config_name]
             # 每组都跑了 subset_task_count 个任务
             assert config.get("eligible_memory_tasks", 0) > 0 or config.get("l3l4_tasks", 0) >= 0
+
+    def test_three_group_has_optimal_branch_match(self, tmp_path: Path) -> None:
+        """prompt-sensitive 组输出 optimal_branch_match_rate"""
+        subprocess.run(
+            [sys.executable, "scripts/run_phase32_memory_eval.py",
+             "--output-dir", str(tmp_path), "--three-group"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        json_files = list(tmp_path.glob("memory_eval_*.json"))
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+
+        ps = data["memory"]["subset_prompt_sensitive"]
+        assert "optimal_branch_match_rate" in ps
+        assert isinstance(ps["optimal_branch_match_rate"], (int, float))
+
+    def test_prompt_sensitive_chooses_correct_branches(self) -> None:
+        """prompt-sensitive 在 v2 任务上选对了 optimal_retry_branch"""
+        from agent.evaluation.memory_experiment import (
+            MemoryExperiment, MemoryConfig, MEMORY_TASKS,
+        )
+        from agent.reflection.types import ReflectionConfig
+
+        experiment = MemoryExperiment(use_real_model=False, output_dir="/tmp/test_branch")
+        config = MemoryConfig(name="memory_off", use_memory=False)
+        reflection_config = ReflectionConfig(enabled=True)
+
+        v2_tasks = [t for t in MEMORY_TASKS if t.category == "reflection_sensitive_v2"]
+        assert len(v2_tasks) == 5, f"Expected 5 v2 tasks, got {len(v2_tasks)}"
+
+        for task in v2_tasks:
+            result = experiment._run_single_task(config, task, reflection_config)
+            if result.get("reflection_triggered", False):
+                selected = result.get("selected_retry_branch", "")
+                optimal = result.get("optimal_retry_branch", "")
+                assert selected == optimal, (
+                    f"{task.task_id}: selected={selected} but optimal={optimal}"
+                )
