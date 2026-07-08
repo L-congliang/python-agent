@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "description": "Patch/File-Edit benchmark — standalone tests for file_edit, file_write tool chain reliability.",
+  "tasks": [
+    {
+      "id": "exact_unique_replace",
+      "description": "Replace a unique string in a file",
+      "setup": {"file": "target.py", "content": "def hello():\n    print('hello')\n\ndef world():\n    print('world')\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "print('hello')", "new_string": "print('hello, world!')"},
+      "expected_content_contains": ["print('hello, world!')"],
+      "expected_content_not_contains": ["print('hello')"],
+      "expected_success": true
+    },
+    {
+      "id": "multi_match_reject",
+      "description": "Edit should reject non-unique match when replace_all=false",
+      "setup": {"file": "target.py", "content": "x = 1\ny = 2\nx = 3\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "x = ", "new_string": "x = 100 "},
+      "expected_success": false,
+      "expected_error_contains": ["匹配多个", "multiple"]
+    },
+    {
+      "id": "multi_match_replace_all",
+      "description": "Edit with replace_all=true should replace all matches",
+      "setup": {"file": "target.py", "content": "x = 1\ny = 2\nx = 3\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "x = ", "new_string": "x = 100 ", "replace_all": true},
+      "expected_content_contains": ["x = 100 1", "x = 100 3"],
+      "expected_content_not_contains": ["x = 1\n", "x = 3\n"],
+      "expected_success": true
+    },
+    {
+      "id": "missing_target_string",
+      "description": "Edit should fail when old_string not found",
+      "setup": {"file": "target.py", "content": "hello world\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "nonexistent_string", "new_string": "replacement"},
+      "expected_success": false,
+      "expected_error_contains": ["不存在", "not found"]
+    },
+    {
+      "id": "preview_no_write",
+      "description": "Preview mode should not modify the file",
+      "setup": {"file": "target.py", "content": "original content\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "original", "new_string": "modified", "preview": true},
+      "expected_success": true,
+      "expected_content_contains": ["original content"],
+      "expected_content_not_contains": ["modified content"],
+      "expected_no_file_change": true
+    },
+    {
+      "id": "atomic_write_new_file",
+      "description": "Write should create new file atomically",
+      "setup": {},
+      "operation": "write",
+      "args": {"file_path": "new_file.py", "content": "print('hello')\n"},
+      "expected_success": true,
+      "expected_content_contains": ["print('hello')"]
+    },
+    {
+      "id": "write_no_overwrite",
+      "description": "Write should reject overwrite when overwrite=false",
+      "setup": {"file": "existing.py", "content": "original\n"},
+      "operation": "write",
+      "args": {"file_path": "existing.py", "content": "new content\n"},
+      "expected_success": false,
+      "expected_error_contains": ["已存在", "already exists"]
+    },
+    {
+      "id": "write_with_overwrite",
+      "description": "Write should overwrite when overwrite=true",
+      "setup": {"file": "existing.py", "content": "original\n"},
+      "operation": "write",
+      "args": {"file_path": "existing.py", "content": "new content\n", "overwrite": true},
+      "expected_success": true,
+      "expected_content_contains": ["new content"],
+      "expected_content_not_contains": ["original"]
+    },
+    {
+      "id": "edit_nonexistent_file",
+      "description": "Edit should fail on nonexistent file",
+      "setup": {},
+      "operation": "edit",
+      "args": {"file_path": "nonexistent.py", "old_string": "x", "new_string": "y"},
+      "expected_success": false,
+      "expected_error_contains": ["不存在", "not exist"]
+    },
+    {
+      "id": "edit_empty_old_string",
+      "description": "Edit should reject empty old_string",
+      "setup": {"file": "target.py", "content": "hello\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "", "new_string": "replacement"},
+      "expected_success": false,
+      "expected_error_contains": ["old_string"]
+    },
+    {
+      "id": "diff_correctness",
+      "description": "Edit should produce correct diff output",
+      "setup": {"file": "target.py", "content": "line1\nline2\nline3\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "line2", "new_string": "LINE2"},
+      "expected_success": true,
+      "expected_diff_contains": ["-line2", "+LINE2"],
+      "expected_content_contains": ["LINE2"]
+    },
+    {
+      "id": "large_file_edit",
+      "description": "Edit should handle large files correctly",
+      "setup": {"file": "large.py", "content_generator": "large"},
+      "operation": "edit",
+      "args": {"file_path": "large.py", "old_string": "MARKER_UNIQUE_12345", "new_string": "REPLACED_MARKER"},
+      "expected_success": true,
+      "expected_content_contains": ["REPLACED_MARKER"],
+      "expected_content_not_contains": ["MARKER_UNIQUE_12345"]
+    },
+    {
+      "id": "unicode_content",
+      "description": "Edit should handle unicode content correctly",
+      "setup": {"file": "unicode.py", "content": "# 中文注释\nmessage = '你好世界'\n"},
+      "operation": "edit",
+      "args": {"file_path": "unicode.py", "old_string": "你好世界", "new_string": "Hello World"},
+      "expected_success": true,
+      "expected_content_contains": ["Hello World"],
+      "expected_content_not_contains": ["你好世界"]
+    },
+    {
+      "id": "write_to_directory",
+      "description": "Write should fail when target is a directory",
+      "setup": {"dir": "subdir"},
+      "operation": "write",
+      "args": {"file_path": "subdir", "content": "test"},
+      "expected_success": false,
+      "expected_error_contains": ["目录", "directory"]
+    },
+    {
+      "id": "edit_preserves_surrounding",
+      "description": "Edit should only change the targeted section",
+      "setup": {"file": "target.py", "content": "line1\nline2\nline3\nline4\nline5\n"},
+      "operation": "edit",
+      "args": {"file_path": "target.py", "old_string": "line3", "new_string": "LINE3"},
+      "expected_success": true,
+      "expected_content_contains": ["line1", "line2", "LINE3", "line4", "line5"],
+      "expected_exact_content": "line1\nline2\nLINE3\nline4\nline5\n"
+    }
+  ]
+}

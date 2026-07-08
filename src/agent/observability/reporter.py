@@ -56,6 +56,9 @@ class RunReporter:
             "started_at": None,
             "finished_at": None,
             "user_request": None,
+            "task_id": None,
+            "model": None,
+            "provider": None,
             "status": None,
             "stop_reason": None,
             "final_answer": None,
@@ -65,6 +68,14 @@ class RunReporter:
             "total_tool_calls": 0,
             "total_tokens_used": 0,
             "files_affected": [],
+            "files_read": [],
+            "files_written": [],
+            "total_bytes_read": 0,
+            "total_bytes_written": 0,
+            "total_artifacts": 0,
+            "permission_asks": 0,
+            "permission_allows": 0,
+            "permission_denies": 0,
             "error": None,
         }
 
@@ -89,30 +100,99 @@ class RunReporter:
         duration_ms: int,
         is_error: bool,
         error_message: str | None = None,
+        *,
+        turn_index: int | None = None,
+        permission_decision: str | None = None,
+        error_type: str | None = None,
+        bytes_read: int | None = None,
+        bytes_written: int | None = None,
+        files_read: list[str] | None = None,
+        files_written: list[str] | None = None,
+        diff_summary: str | None = None,
+        artifact_path: str | None = None,
+        artifact_size: int | None = None,
     ) -> None:
         """记录工具调用
 
         Args:
             tool_name: 工具名称
-            tool_args: 工具参数
+            tool_args: 工具参数（摘要，不过长）
             duration_ms: 执行耗时（毫秒）
             is_error: 是否出错
             error_message: 错误信息（可选）
+            turn_index: 轮次索引
+            permission_decision: 权限决策 (allow/deny/ask/none)
+            error_type: 错误类型 (validation_error/timeout/not_found/permission_denied 等)
+            bytes_read: 读取字节数
+            bytes_written: 写入字节数
+            files_read: 本次读取的文件列表
+            files_written: 本次写入的文件列表
+            diff_summary: diff 摘要（适用于 edit 操作）
+            artifact_path: artifact 文件路径
+            artifact_size: artifact 文件大小
         """
-        tool_call = {
+        # 构造输入摘要（避免泄露过长内容）
+        input_summary = {}
+        for key, value in tool_args.items():
+            if isinstance(value, str) and len(value) > 200:
+                input_summary[key] = value[:200] + "..."
+            else:
+                input_summary[key] = value
+
+        tool_call: dict[str, Any] = {
             "name": tool_name,
-            "args": tool_args,
+            "input_summary": input_summary,
             "duration_ms": duration_ms,
             "is_error": is_error,
-            "error_message": error_message,
         }
+        if turn_index is not None:
+            tool_call["turn_index"] = turn_index
+        if error_message:
+            tool_call["error_message"] = error_message
+        if error_type:
+            tool_call["error_type"] = error_type
+        if permission_decision:
+            tool_call["permission_decision"] = permission_decision
+        if bytes_read is not None:
+            tool_call["bytes_read"] = bytes_read
+        if bytes_written is not None:
+            tool_call["bytes_written"] = bytes_written
+        if files_read:
+            tool_call["files_read"] = files_read
+        if files_written:
+            tool_call["files_written"] = files_written
+        if diff_summary:
+            tool_call["diff_summary"] = diff_summary
+        if artifact_path:
+            tool_call["artifact_path"] = artifact_path
+        if artifact_size is not None:
+            tool_call["artifact_size"] = artifact_size
+
         self._report["tool_calls"].append(tool_call)
         self._report["total_tool_calls"] += 1
+
+        # 累计字节数
+        if bytes_read:
+            self._report["total_bytes_read"] += bytes_read
+        if bytes_written:
+            self._report["total_bytes_written"] += bytes_written
+        if artifact_path:
+            self._report["total_artifacts"] += 1
 
         # 记录受影响的文件
         file_path = tool_args.get("file_path") or tool_args.get("path")
         if file_path and file_path not in self._report["files_affected"]:
             self._report["files_affected"].append(file_path)
+
+        # 记录读/写的文件
+        if files_read:
+            for f in files_read:
+                if f not in self._report["files_read"]:
+                    self._report["files_read"].append(f)
+        if files_written:
+            for f in files_written:
+                if f not in self._report["files_written"]:
+                    self._report["files_written"].append(f)
 
         logger.debug("Tool call recorded: %s (%dms)", tool_name, duration_ms)
 
@@ -128,6 +208,25 @@ class RunReporter:
             output_tokens: 输出 token 数
         """
         self._report["total_tokens_used"] += input_tokens + output_tokens
+
+    def record_permission(self, decision: str) -> None:
+        """记录权限决策
+
+        Args:
+            decision: "ask" | "allow" | "deny"
+        """
+        if decision == "ask":
+            self._report["permission_asks"] += 1
+        elif decision == "allow":
+            self._report["permission_allows"] += 1
+        elif decision == "deny":
+            self._report["permission_denies"] += 1
+
+    def set_run_metadata(self, **kwargs: Any) -> None:
+        """设置运行级别元数据（task_id, model, provider 等）"""
+        for key, value in kwargs.items():
+            if key in self._report:
+                self._report[key] = value
 
     def record_finish(
         self,
@@ -156,6 +255,9 @@ class RunReporter:
             duration = finish_time - self._start_time
             self._report["duration_ms"] = int(duration.total_seconds() * 1000)
 
+        # 计算聚合指标
+        self._report["aggregate"] = self._compute_aggregates()
+
         # 脱敏
         report_safe = self._redactor.redact_dict(self._report)
 
@@ -170,7 +272,89 @@ class RunReporter:
             self._report["total_tool_calls"],
         )
 
+    def _compute_aggregates(self) -> dict[str, Any]:
+        """计算聚合指标"""
+        tool_calls = self._report["tool_calls"]
+        total = len(tool_calls)
+        if total == 0:
+            return {
+                "tool_success_rate": 1.0,
+                "tool_failure_count": 0,
+                "p50_latency_ms": 0,
+                "p95_latency_ms": 0,
+                "max_latency_ms": 0,
+                "permission_allow_rate": 1.0,
+                "permission_deny_count": self._report["permission_denies"],
+            }
+
+        # tool success rate
+        errors = sum(1 for tc in tool_calls if tc.get("is_error"))
+        success_rate = (total - errors) / total
+
+        # latency percentiles (nearest-rank method)
+        latencies = sorted(tc.get("duration_ms", 0) for tc in tool_calls)
+        p50_idx = min(round(len(latencies) * 0.5) - 1, len(latencies) - 1) if latencies else 0
+        p95_idx = min(round(len(latencies) * 0.95) - 1, len(latencies) - 1) if latencies else 0
+        p50_idx = max(p50_idx, 0)
+        p95_idx = max(p95_idx, 0)
+
+        # permission rate
+        asks = self._report["permission_asks"]
+        allows = self._report["permission_allows"]
+        denies = self._report["permission_denies"]
+        perm_total = asks + allows + denies
+        allow_rate = allows / perm_total if perm_total > 0 else 1.0
+
+        return {
+            "tool_success_rate": round(success_rate, 4),
+            "tool_failure_count": errors,
+            "p50_latency_ms": latencies[p50_idx] if latencies else 0,
+            "p95_latency_ms": latencies[p95_idx] if latencies else 0,
+            "max_latency_ms": latencies[-1] if latencies else 0,
+            "permission_allow_rate": round(allow_rate, 4),
+            "permission_deny_count": self._report["permission_denies"],
+        }
+
     @property
     def report(self) -> dict[str, Any]:
         """获取当前报告数据（只读副本）"""
         return self._report.copy()
+
+    def generate_summary_markdown(self) -> str:
+        """生成 Markdown 格式的运行摘要"""
+        r = self._report
+        agg = r.get("aggregate", {})
+        lines = [
+            f"# Run Summary: {r['run_id']}",
+            "",
+            f"- **Status**: {r.get('status', 'unknown')}",
+            f"- **Duration**: {r.get('duration_ms', 0)}ms",
+            f"- **Turns**: {r.get('total_turns', 0)}",
+            f"- **Tool Calls**: {r.get('total_tool_calls', 0)}",
+            f"- **Tokens Used**: {r.get('total_tokens_used', 0)}",
+            "",
+            "## Tool Metrics",
+            "",
+            f"- Tool Success Rate: {agg.get('tool_success_rate', 'N/A')}",
+            f"- Tool Failures: {agg.get('tool_failure_count', 0)}",
+            f"- P50 Latency: {agg.get('p50_latency_ms', 0)}ms",
+            f"- P95 Latency: {agg.get('p95_latency_ms', 0)}ms",
+            f"- Max Latency: {agg.get('max_latency_ms', 0)}ms",
+            "",
+            "## File Metrics",
+            "",
+            f"- Files Affected: {len(r.get('files_affected', []))}",
+            f"- Files Read: {len(r.get('files_read', []))}",
+            f"- Files Written: {len(r.get('files_written', []))}",
+            f"- Total Bytes Read: {r.get('total_bytes_read', 0)}",
+            f"- Total Bytes Written: {r.get('total_bytes_written', 0)}",
+            f"- Artifacts Generated: {r.get('total_artifacts', 0)}",
+            "",
+            "## Permission Metrics",
+            "",
+            f"- Permission Asks: {r.get('permission_asks', 0)}",
+            f"- Permission Allows: {r.get('permission_allows', 0)}",
+            f"- Permission Denies: {r.get('permission_denies', 0)}",
+            f"- Allow Rate: {agg.get('permission_allow_rate', 'N/A')}",
+        ]
+        return "\n".join(lines)

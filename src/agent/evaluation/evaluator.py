@@ -188,15 +188,37 @@ class Evaluator:
             error = ""
             if task.verifier:
                 try:
-                    verifier_code = self._clean_verifier(task.verifier)
+                    import os
+                    verifier_env = os.environ.copy()
+                    verifier_env["AGENT_FINAL_ANSWER"] = final_answer
+
+                    verifier_str = task.verifier.strip()
+                    # 支持两种 verifier 格式：
+                    # 1. "python3 -c ..." — 内联代码
+                    # 2. "python3 path/to/verifier.py" — 脚本文件
+                    if verifier_str.startswith("python3 ") and not verifier_str.startswith("python3 -c "):
+                        # 脚本文件模式：将 verifier 路径相对于 benchmark 目录解析
+                        script_path = verifier_str[len("python3 "):].strip()
+                        # 如果是相对路径，相对于项目根目录
+                        if not os.path.isabs(script_path):
+                            # evaluator.py 位于 src/agent/evaluation/，
+                            # 需要向上 4 层到项目根目录
+                            project_root = Path(__file__).parent.parent.parent.parent
+                            script_path = str(project_root / script_path)
+                        cmd = [sys.executable, script_path]
+                    else:
+                        verifier_code = self._clean_verifier(verifier_str)
+                        cmd = [sys.executable, "-c", verifier_code]
+
                     result = subprocess.run(
-                        [sys.executable, "-c", verifier_code],
+                        cmd,
                         cwd=str(workspace),
                         capture_output=True,
                         text=True,
                         encoding="utf-8",
                         errors="replace",
                         timeout=10,
+                        env=verifier_env,
                     )
                     passed = result.returncode == 0
                     if not passed:

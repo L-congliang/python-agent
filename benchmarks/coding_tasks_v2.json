@@ -1,0 +1,106 @@
+{
+  "schema_version": 2,
+  "description": "Python Agent benchmark v2. Hardened verifiers — no false positives from no-op agents.",
+  "tasks": [
+    {
+      "id": "readme_update",
+      "prompt": "In README.md, replace the placeholder project description 'This is a placeholder project description.' with 'A production-grade CLI AI coding agent built with Python.'",
+      "fixture_repo": "benchmarks/fixtures/bench_readme",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "README.md contains the new description",
+      "verifier": "python3 -c \"from pathlib import Path; text = Path('README.md').read_text(encoding='utf-8'); assert 'production-grade CLI AI coding agent' in text, 'New description not found'; assert 'placeholder project description' not in text, 'Old placeholder still present'\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "readme_add_section",
+      "prompt": "Add a new section '## Contributing' at the end of README.md with the content 'Contributions are welcome! Please open an issue first.'",
+      "fixture_repo": "benchmarks/fixtures/bench_readme",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "README.md contains Contributing section",
+      "verifier": "python3 -c \"from pathlib import Path; text = Path('README.md').read_text(encoding='utf-8'); assert '## Contributing' in text, 'Contributing heading not found'; assert 'Contributions are welcome' in text, 'Contributing content not found'\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "fix_parse_config",
+      "prompt": "Fix the bug in broken.py: the parse_config function crashes on empty lines. Add a check to skip empty lines.",
+      "fixture_repo": "benchmarks/fixtures/bench_error",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 6,
+      "expected_artifact": "broken.py parse_config handles empty lines",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from broken import parse_config; result = parse_config('a=1\\n\\nb=2'); assert result == {'a': '1', 'b': '2'}, f'Expected {{a: 1, b: 2}}, got {result}'\"",
+      "category": "error-recovery"
+    },
+    {
+      "id": "fix_negative_discount",
+      "prompt": "Fix the bug in broken.py: the calculate_discount function should raise ValueError for negative discounts.",
+      "fixture_repo": "benchmarks/fixtures/bench_error",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 6,
+      "expected_artifact": "broken.py calculate_discount raises ValueError for negative discount",
+      "verifier": "python3 benchmarks/verifiers/fix_negative_discount.py",
+      "category": "error-recovery"
+    },
+    {
+      "id": "add_multiply_function",
+      "prompt": "Add a new function 'power(base: int, exponent: int) -> int' to main.py that returns base raised to the power of exponent. Use the ** operator.",
+      "fixture_repo": "benchmarks/fixtures/bench_python",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "main.py contains power function",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from main import power; assert power(2, 3) == 8, f'power(2,3)={power(2,3)}'; assert power(5, 0) == 1, f'power(5,0)={power(5,0)}'; assert power(3, 2) == 9, f'power(3,2)={power(3,2)}'\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "find_function_usage",
+      "prompt": "In the fixtures/bench_search directory, find all files that contain the class 'User' and write the file paths to answer.txt, one per line.",
+      "fixture_repo": "benchmarks/fixtures/bench_search",
+      "allowed_tools": ["grep", "glob", "file_read", "file_write"],
+      "step_budget": 4,
+      "expected_artifact": "answer.txt contains data.py",
+      "verifier": "python3 -c \"from pathlib import Path; assert Path('answer.txt').exists(), 'answer.txt not created'; text = Path('answer.txt').read_text(encoding='utf-8'); assert 'data.py' in text, f'data.py not in answer.txt: {text}'\"",
+      "category": "code-search"
+    },
+    {
+      "id": "find_max_implementation",
+      "prompt": "Read utils.py and write a summary of what the find_max function does (including error handling) to answer.txt.",
+      "fixture_repo": "benchmarks/fixtures/bench_python",
+      "allowed_tools": ["file_read", "file_write"],
+      "step_budget": 3,
+      "expected_artifact": "answer.txt describes find_max",
+      "verifier": "python3 benchmarks/verifiers/find_max_implementation.py",
+      "category": "code-search"
+    },
+    {
+      "id": "merge_lists_fix",
+      "prompt": "Fix the bug in broken.py: the merge_lists function should preserve order and remove duplicates. Use a list with a seen set instead of converting to set.",
+      "fixture_repo": "benchmarks/fixtures/bench_error",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 6,
+      "expected_artifact": "broken.py merge_lists preserves order",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from broken import merge_lists; result = merge_lists(['a', 'b', 'c'], ['b', 'd']); assert result == ['a', 'b', 'c', 'd'], f'Expected [a,b,c,d], got {result}'; result2 = merge_lists(['x'], ['x', 'y']); assert result2 == ['x', 'y'], f'Expected [x,y], got {result2}'\"",
+      "category": "error-recovery"
+    },
+    {
+      "id": "product_discount_task",
+      "prompt": "In data.py, add a method 'total_value(self) -> float' to the Product class that returns price multiplied by stock.",
+      "fixture_repo": "benchmarks/fixtures/bench_search",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "data.py Product class has total_value method",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from data import Product; p = Product('test', 10.0, 5); assert p.total_value() == 50.0, f'total_value()={p.total_value()}'; p2 = Product('zero', 5.0, 0); assert p2.total_value() == 0.0, f'total_value()={p2.total_value()}'\"",
+      "category": "file-edit"
+    },
+    {
+      "id": "divide_by_zero_fix",
+      "prompt": "In main.py, add a new function 'safe_divide(a: float, b: float) -> float | None' that returns None when b is zero instead of raising an exception.",
+      "fixture_repo": "benchmarks/fixtures/bench_python",
+      "allowed_tools": ["file_read", "file_edit"],
+      "step_budget": 4,
+      "expected_artifact": "main.py contains safe_divide function",
+      "verifier": "python3 -c \"import sys; sys.path.insert(0, '.'); from main import safe_divide; assert safe_divide(10.0, 2.0) == 5.0, f'safe_divide(10,2)={safe_divide(10.0, 2.0)}'; assert safe_divide(10.0, 0.0) is None, f'safe_divide(10,0)={safe_divide(10.0, 0.0)}'\"",
+      "category": "file-edit"
+    }
+  ]
+}

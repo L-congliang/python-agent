@@ -509,6 +509,7 @@ class AgentLoop:
         if self._trace:
             self._trace.emit("run_started", {
                 "user_request": user_input,
+                "task_id": getattr(self, '_benchmark_task_id', None),
                 "config": {
                     "model": self._config.model,
                     "max_turns": self._config.max_turns,
@@ -517,6 +518,10 @@ class AgentLoop:
                 },
             })
             self._reporter.record_start(user_request=user_input)
+            self._reporter.set_run_metadata(
+                model=self._config.model,
+                task_id=getattr(self, '_benchmark_task_id', None),
+            )
 
         # 捕获工作区快照
         if self._workspace_snapshot:
@@ -1552,22 +1557,59 @@ class AgentLoop:
                     )
                     results.append(result)
                     self._retry_limiter.record_failure()
+                    # 记录权限拒绝到 trace/reporter
+                    if self._trace:
+                        self._trace.emit("tool_executed", {
+                            "turn": self._turn_count,
+                            "tool_name": tool_call.name,
+                            "tool_id": tool_call.id,
+                            "input_summary": {k: (v[:100] if isinstance(v, str) else v) for k, v in tool_call.arguments.items()},
+                            "duration_ms": 0,
+                            "is_error": True,
+                            "permission_decision": "deny",
+                            "error_type": "permission_denied",
+                        })
+                    if self._reporter:
+                        self._reporter.record_permission("deny")
+                        self._reporter.record_tool_call(
+                            tool_name=tool_call.name,
+                            tool_args=tool_call.arguments,
+                            duration_ms=0,
+                            is_error=True,
+                            turn_index=self._turn_count,
+                            permission_decision="deny",
+                            error_type="permission_denied",
+                        )
                     # 工具执行完成回调（权限拒绝路径）
                     if self._config.on_tool_result:
                         self._config.on_tool_result(tool_call, result)
                     continue
                 if perm_decision.behavior == PermissionBehavior.ASK:
                     logger.warning("Permission requires confirmation: %s - %s", tool_call.name, perm_decision.message)
+                    # 记录 permission ask
+                    if self._reporter:
+                        self._reporter.record_permission("ask")
                     request = self._build_permission_request(
                         tool_call=tool_call,
                         context=context,
                         message=perm_decision.message,
                     )
                     if self._config.permission_handler is None:
+                        # 无权限处理器 → 记为 deny（fail-closed）
+                        if self._reporter:
+                            self._reporter.record_permission("deny")
+                            self._reporter.record_tool_call(
+                                tool_name=tool_call.name,
+                                tool_args=tool_call.arguments,
+                                duration_ms=0,
+                                is_error=True,
+                                turn_index=self._turn_count,
+                                permission_decision="deny",
+                                error_type="no_handler",
+                            )
                         result = self._build_permission_ask_result(request)
                         results.append(result)
                         self._retry_limiter.record_failure()
-                        # 工具执行完成回调（无权限处理器路径）
                         if self._config.on_tool_result:
                             self._config.on_tool_result(tool_call, result)
                         continue
@@ -1576,6 +1618,18 @@ class AgentLoop:
                         confirmation = self._config.permission_handler(request)
                     except Exception as e:
                         logger.warning("Permission handler failed: %s", e)
+                        # handler 异常 → 记为 deny
+                        if self._reporter:
+                            self._reporter.record_permission("deny")
+                            self._reporter.record_tool_call(
+                                tool_name=tool_call.name,
+                                tool_args=tool_call.arguments,
+                                duration_ms=0,
+                                is_error=True,
+                                turn_index=self._turn_count,
+                                permission_decision="deny",
+                                error_type="handler_exception",
+                            )
                         unavailable_request = PermissionRequest(
                             tool_name=request.tool_name,
                             tool_input=request.tool_input,
@@ -1585,37 +1639,83 @@ class AgentLoop:
                         result = self._build_permission_ask_result(unavailable_request)
                         results.append(result)
                         self._retry_limiter.record_failure()
-                        # 工具执行完成回调（处理器异常路径）
                         if self._config.on_tool_result:
                             self._config.on_tool_result(tool_call, result)
                         continue
 
                     if confirmation == PermissionConfirmationOutcome.UNAVAILABLE:
+                        # 确认不可用 → 记为 deny
+                        if self._reporter:
+                            self._reporter.record_permission("deny")
+                            self._reporter.record_tool_call(
+                                tool_name=tool_call.name,
+                                tool_args=tool_call.arguments,
+                                duration_ms=0,
+                                is_error=True,
+                                turn_index=self._turn_count,
+                                permission_decision="deny",
+                                error_type="confirmation_unavailable",
+                            )
                         result = self._build_permission_ask_result(request)
                         results.append(result)
                         self._retry_limiter.record_failure()
-                        # 工具执行完成回调（不可用路径）
                         if self._config.on_tool_result:
                             self._config.on_tool_result(tool_call, result)
                         continue
 
                     if confirmation == PermissionConfirmationOutcome.DENIED:
+                        # 记录 permission deny（用户拒绝）
+                        if self._reporter:
+                            self._reporter.record_permission("deny")
+                            self._reporter.record_tool_call(
+                                tool_name=tool_call.name,
+                                tool_args=tool_call.arguments,
+                                duration_ms=0,
+                                is_error=True,
+                                turn_index=self._turn_count,
+                                permission_decision="deny",
+                                error_type="user_rejected",
+                            )
+                        if self._trace:
+                            self._trace.emit("tool_executed", {
+                                "turn": self._turn_count,
+                                "tool_name": tool_call.name,
+                                "tool_id": tool_call.id,
+                                "input_summary": {k: (v[:100] if isinstance(v, str) else v) for k, v in tool_call.arguments.items()},
+                                "duration_ms": 0,
+                                "is_error": True,
+                                "permission_decision": "deny",
+                                "error_type": "user_rejected",
+                            })
                         result = self._build_permission_rejected_result(request)
                         results.append(result)
                         self._retry_limiter.record_failure()
-                        # 工具执行完成回调（被拒绝路径）
                         if self._config.on_tool_result:
                             self._config.on_tool_result(tool_call, result)
                         continue
 
                     if confirmation != PermissionConfirmationOutcome.APPROVED:
+                        # 记录 permission deny（未批准，非 explicit deny）
+                        if self._reporter:
+                            self._reporter.record_tool_call(
+                                tool_name=tool_call.name,
+                                tool_args=tool_call.arguments,
+                                duration_ms=0,
+                                is_error=True,
+                                turn_index=self._turn_count,
+                                permission_decision="deny",
+                                error_type="not_approved",
+                            )
                         result = self._build_permission_ask_result(request)
                         results.append(result)
                         self._retry_limiter.record_failure()
-                        # 工具执行完成回调（未批准路径）
                         if self._config.on_tool_result:
                             self._config.on_tool_result(tool_call, result)
                         continue
+
+                    # 记录 permission allow（confirmed）
+                    if self._reporter:
+                        self._reporter.record_permission("allow")
 
                     # Session Policy：记录 allow-once / allow-session
                     if self._session_policy is not None:
@@ -1697,25 +1797,43 @@ class AgentLoop:
             self._tool_call_count += 1
             self._task_state.increment_tool_steps()
 
-            # 发射 tool_executed 事件
+            # 发射 tool_executed 事件（增强字段）
             if self._trace:
-                self._trace.emit("tool_executed", {
+                perm_decision_str = "confirmed_allow" if confirmation_note else "auto_allow"
+                trace_data: dict[str, Any] = {
                     "turn": self._turn_count,
                     "tool_name": tool_call.name,
                     "tool_id": tool_call.id,
-                    "input": tool_call.arguments,
+                    "input_summary": {
+                        k: (v[:200] + "..." if isinstance(v, str) and len(v) > 200 else v)
+                        for k, v in tool_call.arguments.items()
+                    },
                     "output_preview": str(result.output)[:200] if result.output else None,
                     "duration_ms": duration_ms,
                     "is_error": result.is_error,
-                })
+                    "permission_decision": perm_decision_str,
+                }
+                # 提取文件操作信息
+                file_op_info = self._extract_file_op_info(tool_call, result)
+                trace_data.update(file_op_info)
+                self._trace.emit("tool_executed", trace_data)
 
-            # 记录到 reporter
+            # 记录到 reporter（增强字段）
             if self._reporter:
+                file_op = self._extract_file_op_info(tool_call, result)
+                perm_dec = "confirmed_allow" if confirmation_note else "auto_allow"
                 self._reporter.record_tool_call(
                     tool_name=tool_call.name,
                     tool_args=tool_call.arguments,
                     duration_ms=duration_ms,
                     is_error=result.is_error,
+                    turn_index=self._turn_count,
+                    permission_decision=perm_dec,
+                    error_type=self._classify_error(result) if result.is_error else None,
+                    files_read=file_op.get("files_read"),
+                    files_written=file_op.get("files_written"),
+                    bytes_read=file_op.get("bytes_read"),
+                    bytes_written=file_op.get("bytes_written"),
                 )
 
             # 追踪文件（用于 checkpoint）
@@ -1833,6 +1951,57 @@ class AgentLoop:
 
         # 向后兼容：没有 observation，使用 output
         return str(result.output)
+
+    # ========== Trace 辅助方法 ==========
+
+    def _extract_file_op_info(
+        self, tool_call: ToolCall, result: ToolResult
+    ) -> dict[str, Any]:
+        """从工具调用中提取文件操作信息（用于 trace/reporter）"""
+        info: dict[str, Any] = {}
+        name = tool_call.name
+        args = tool_call.arguments
+
+        if name == "read":
+            fp = args.get("file_path", "")
+            if fp:
+                info["files_read"] = [fp]
+                # 估算读取字节数
+                if result.output and not result.is_error:
+                    info["bytes_read"] = len(str(result.output).encode("utf-8"))
+
+        elif name == "write":
+            fp = args.get("file_path", "")
+            if fp:
+                info["files_written"] = [fp]
+                content = args.get("content", "")
+                info["bytes_written"] = len(content.encode("utf-8"))
+
+        elif name == "edit":
+            fp = args.get("file_path", "")
+            if fp:
+                info["files_written"] = [fp]
+                new_str = args.get("new_string", "")
+                old_str = args.get("old_string", "")
+                info["bytes_written"] = len(new_str.encode("utf-8"))
+                info["bytes_read"] = len(old_str.encode("utf-8"))
+
+        return info
+
+    def _classify_error(self, result: ToolResult) -> str:
+        """分类工具错误类型"""
+        output = str(result.output).lower()
+        if "timeout" in output:
+            return "timeout"
+        if "permission" in output or "权限" in output:
+            return "permission_denied"
+        if "not found" in output or "不存在" in output:
+            return "not_found"
+        if "validation" in output or "校验" in output:
+            return "validation_error"
+        if "escape" in output or "逃逸" in output:
+            return "path_escape"
+        return "unknown"
 
     # ========== 记忆写入钩子 ==========
 

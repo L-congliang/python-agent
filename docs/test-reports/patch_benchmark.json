@@ -1,0 +1,102 @@
+{
+  "total": 15,
+  "passed": 15,
+  "pass_rate": 1.0,
+  "edit_pass_rate": 1.0,
+  "write_pass_rate": 1.0,
+  "preview_no_write_rate": 1.0,
+  "invalid_path_block_rate": 1.0,
+  "unintended_change_count": 0,
+  "details": [
+    {
+      "task_id": "exact_unique_replace",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "multi_match_reject",
+      "passed": true,
+      "error": "",
+      "details": "Correctly failed: old_string 匹配多个（2 个），请提供更精确的 old_string"
+    },
+    {
+      "task_id": "multi_match_replace_all",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "missing_target_string",
+      "passed": true,
+      "error": "",
+      "details": "Correctly failed: old_string 在文件中不存在"
+    },
+    {
+      "task_id": "preview_no_write",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "atomic_write_new_file",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "write_no_overwrite",
+      "passed": true,
+      "error": "",
+      "details": "Correctly failed: 文件已存在，默认不会覆盖: C:\\Users\\Liang\\AppData\\Local\\Temp\\patch_bench_10t_vf6y\\existing.py\n如果确实需要覆盖，请显式传入 over"
+    },
+    {
+      "task_id": "write_with_overwrite",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "edit_nonexistent_file",
+      "passed": true,
+      "error": "",
+      "details": "Correctly failed: 文件不存在: C:\\Users\\Liang\\AppData\\Local\\Temp\\patch_bench_kn55j2im\\nonexistent.py"
+    },
+    {
+      "task_id": "edit_empty_old_string",
+      "passed": true,
+      "error": "",
+      "details": "Correctly failed: old_string 匹配多个（7 个），请提供更精确的 old_string"
+    },
+    {
+      "task_id": "diff_correctness",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "large_file_edit",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "unicode_content",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    },
+    {
+      "task_id": "write_to_directory",
+      "passed": true,
+      "error": "",
+      "details": "Correctly failed: 路径是目录，不是文件: C:\\Users\\Liang\\AppData\\Local\\Temp\\patch_bench_pr_ja3qd\\subdir"
+    },
+    {
+      "task_id": "edit_preserves_surrounding",
+      "passed": true,
+      "error": "",
+      "details": "All checks passed"
+    }
+  ]
+}
