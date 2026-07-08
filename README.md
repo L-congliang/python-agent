@@ -1,6 +1,6 @@
 # Python Code Agent
 
-一个参考 Claude Code / Codex 思路实现的本地 Python code agent demo，重点在多轮 agent loop、工具调用闭环、权限确认、文件编辑安全和回归测试，而不是完整复刻生产级 AI IDE。
+一个参考 Claude Code / Codex 思路实现的本地 Python code agent，重点在多轮 agent loop、工具调用闭环、权限确认、文件编辑安全和 agent 机制评测验证，而不是完整复刻生产级 AI IDE。
 
 ## 项目简介
 
@@ -15,7 +15,7 @@
 
 当前状态更适合定义为：
 
-`Demo / 展示级（可现场演示，安全边界较清晰）`
+`扎实的 Demo，接近 Prototype 边缘（核心能力闭环，评测体系可验证）`
 
 ## 当前能力
 
@@ -44,6 +44,9 @@
 - **Session Autosave**：默认入口自动保存，/reset 后新旧 session 分离
 - **Inspect CLI**：/session、/sessions、/inspect 查看当前状态
 - **Freshness-aware Resume**：resume 时检测 checkpoint freshness，四类状态清晰可见
+- **Memory 系统**：分层记忆（working memory / episodic notes / durable memory）+ cross-session retrieval
+- **Controlled Reflection**：受控单次自纠正（ReflectionPolicy + ReflectionBuilder + bounded one-shot retry）
+- **Agent 评测体系**：基于真实 AgentLoop 的 memory / reflection benchmark，支持三组因果对比
 - 中文文档包，适合 demo、复习和面试准备
 
 ## 架构概览
@@ -181,20 +184,42 @@ uv run pytest tests -q
 
 - 还不是 production-ready
 - sandbox 不是 OS-level isolation
-- `file_edit` 还没有完整 rollback 工作流
-- 当前任务级 e2e 使用 fake model，不是远程 LLM e2e
+- 当前 benchmark 结论基于 scripted benchmark（ScriptedModelClient），不是真实模型上的普遍结论
+- reflection 机制尚未接入默认 AgentLoop（仅在 benchmark 层验证）
 - 真实 CLI 运行仍需要 API key
 - 当前不主打 MCP / WebUI / 多 agent 并行 / 长期记忆检索产品化
-- artifact 保存是本地文件，没有跨 session 持久化
+
+## 评测体系与关键结论
+
+本项目不仅实现 agent 功能，还搭建了评测体系来验证机制是否有效。
+
+### Memory Benchmark（Phase 3.2E）
+
+基于真实 AgentLoop 执行路径（非 mock），对比 memory_on vs memory_off：
+
+| 指标 | memory_on | memory_off |
+|------|-----------|------------|
+| correct_rate | 70% | 63% |
+| avg_tool_calls | 0.1 | 1.0 |
+| target_reread_rate | 0% | 100% |
+
+### Reflection Benchmark（Phase 3.2C + 3.2F）
+
+三组因果对比（reflection_sensitive_v2 子集，5 个混合最优策略任务）：
+
+| 组 | correct | reread | tools | branch_ok |
+|----|---------|--------|-------|-----------|
+| Baseline（无 retry） | 40% | 40% | 0.4 | — |
+| Fixed Retry（统一 reread） | 100% | 100% | 1.4 | 60% |
+| Prompt-Sensitive | 100% | 60% | 1.0 | 100% |
+
+**核心结论：** 在 scripted benchmark 下，prompt-sensitive retry 相比固定策略减少 40% reread、0.4/任务 tool calls，optimal_branch_match_rate 从 60% 提升到 100%。首次观察到 reflection 内容的额外增量价值。
+
+详细报告见：
+- `docs/agent-improvement/15-phase3.2e-benchmark-hardening.md`
+- `docs/agent-improvement/18-phase3.2f-prompt-sensitive-benchmark.md`
 
 ## Roadmap
-
-短期更值得做的是：
-
-- `main.py` 默认装配 smoke test 之后的 demo polish
-- 更清晰的 CLI walkthrough
-- 更完整的文件编辑恢复方案
-- 更稳定的 integration / smoke coverage
 
 当前 roadmap 见：
 
