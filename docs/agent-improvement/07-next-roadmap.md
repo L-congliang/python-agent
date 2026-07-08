@@ -18,24 +18,55 @@
 - 支持 created（删除文件）和 modified（恢复备份）两种回退
 - 测试基线从 943 passed 提升到 971 passed
 
-### Phase 2.3A Follow-up
+### Phase 2.3B：Session 级 Permission Policy
 
-- **rollback 后 file_read_state / loop 内缓存未同步**
-  - 影响：同一 session 内回退后再读文件，可能看到旧内容
-  - 原因：rollback 在 store 层面，不经过 context
-  - 优先级：P1（真实 agent 行为风险）
+- session_policy.py：内存态 store，支持 allow-once / allow-session
+- bash 按精确 command 匹配，write/edit 按规范化路径匹配
+- CLI 确认支持 y/a/n/Enter
+- 测试基线从 971 passed 提升到 994 passed
+
+### Phase 2.3C：真实远程 LLM Smoke
+
+- 环境门控：RUN_REAL_LLM_SMOKE=1，MIMO_API_KEY 缺失时自动 skip
+- client smoke：验证配置读取、client 初始化、远程 API 可达
+- agent loop smoke：验证默认装配路径、tool use -> observation -> final answer
+- 测试基线从 994 passed 提升到 997 passed
+
+### Phase 3.1：Session / Workspace 增强
+
+- Task 1：session 可持久化、可恢复
+- Task 4：autosave 进入默认使用体验
+- Task 2：/session、/sessions、/inspect CLI 命令
+- Task 3：freshness-aware resume
+- 测试基线从 997 passed 提升到 1061 passed
+
+### Phase 3.2A：Evaluation Baseline 固化
+
+- 统一 baseline runner：scripts/run_phase32_baseline.py
+- Memory baseline：memory_on vs memory_off
+- Recovery baseline：rollback / backup / history
+- Permission baseline：ASK / session allow / deny preservation
+- 测试基线从 1061 passed 提升到 1072 passed
+
+### Phase 3.2E：Benchmark Hardening - Realistic Memory Evaluation
+
+- 去 mock 化：MemoryExperiment 默认走 ScriptedModelClient + 真实 AgentLoop
+- 敏感任务重构：新增 3 个 memory_sensitive 任务，memory_on/off 产生真实差异
+- 指标体系调整：主效果指标切到效率指标（avg_tool_calls, target_reread_rate 等）
+- 专用 memory eval runner：scripts/run_phase32_memory_eval.py
+- 测试基线从 1096 passed 提升到 1101 passed
+- 关键结果：FakeModelClient 下首次观察到 memory_on vs memory_off 差异（avg_tool_calls 10x, correct_rate +7pp）
 
 ## 必须做
 
 1. 修复 rollback 后缓存同步问题（2.3A follow-up）
-2. Session 级 permission policy（2.3B）
-3. 真实远程 LLM 回归链路（2.3C）
 
 ## 应该做
 
-1. backup 文件清理策略
-2. 多版本回滚（当前只支持最近一次）
-3. 更清晰的 run artifact 展示
+1. Phase 3.2C：Reflection（现在有了可信基线，更值得做）
+2. Phase 3.2D：Hermes Curator
+3. backup 文件清理策略
+4. 多版本回滚（当前只支持最近一次）
 
 ## 可以暂缓
 
